@@ -1,0 +1,37 @@
+export interface User {
+  id: string
+  username?: string | null
+  firstName: string
+  lastName: string
+  email: string
+  role: 'admin' | 'employee' | 'client'
+  isActive: boolean
+}
+
+export interface Client {
+  id: string
+  userId: string
+  clientUniqueNumber: string
+  companyName: string
+  contactName: string
+  email: string
+  mobile?: string | null
+  address?: string | null
+}
+
+export interface Employee {
+  id: string
+  userId: string
+  employeeUniqueNumber: string
+  jobTitle?: string | null
+  email?: string | null
+}
+
+export interface Service {
+  id: string
+  description: string
+  ideaPrice: number
+  unit: string
+}
+
+export interface ApiListResponse<T> extends Array<T> {}

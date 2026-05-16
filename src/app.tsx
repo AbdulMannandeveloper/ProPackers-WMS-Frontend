@@ -3,12 +3,67 @@ import { Fragment } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
 
 import { ProtectedRoute } from '@/protected-route'
+import AuthLayout from '@/layouts/auth/layout'
 import { homeRoutes } from '@/routes/home'
+import { authRoutes } from '@/routes/auth'
+import { appRoutes } from '@/routes/app'
+import SetupPasswordPage from '@/pages/auth/setup-password'
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route
+          path="/setup-password"
+          element={<AuthLayout><SetupPasswordPage /></AuthLayout>}
+        />
+
+        {/* auth routes */}
+        {authRoutes.routes.map((route) => {
+          const Layout = authRoutes.layout ?? Fragment
+          const RouteComponent = route.element
+
+          return (
+            <Route
+              key={`auth-${route.path}`}
+              path={`${authRoutes.basePath}${route.path}`}
+              element={
+                <ProtectedRoute
+                  permissions={route.permissions}
+                  requireAuth={route.requireAuth}
+                >
+                  <Layout>
+                    <RouteComponent />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+          )
+        })}
+
+        {/* app (dashboard) routes */}
+        {appRoutes.routes.map((route) => {
+          const Layout = appRoutes.layout ?? Fragment
+          const RouteComponent = route.element
+
+          return (
+            <Route
+              key={`app-${route.path}`}
+              path={`${appRoutes.basePath}${route.path}`}
+              element={
+                <ProtectedRoute
+                  permissions={route.permissions}
+                  requireAuth={route.requireAuth}
+                >
+                  <Layout>
+                    <RouteComponent />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+          )
+        })}
+
         {/* home routes */}
         {homeRoutes.routes.map((route) => {
           const Layout = homeRoutes.layout ?? Fragment
