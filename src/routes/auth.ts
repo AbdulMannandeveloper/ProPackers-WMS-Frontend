@@ -1,5 +1,6 @@
 import AuthLayout from '@/layouts/auth/layout'
 import AdminSignupPage from '@/pages/auth/admin-signup'
+import ClientLoginPage from '@/pages/auth/client-login'
 import LoginPage from '@/pages/auth/login'
 import type { RouteGroup } from '@/routes/types'
 
@@ -12,6 +13,13 @@ export const authRoutes: RouteGroup = {
       path: '/login',
       element: LoginPage,
       title: 'Login',
+      permissions: [],
+      requireAuth: false,
+    },
+    {
+      path: '/client-login',
+      element: ClientLoginPage,
+      title: 'Client Login',
       permissions: [],
       requireAuth: false,
     },

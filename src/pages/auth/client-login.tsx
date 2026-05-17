@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { useNavigate } from 'react-router'
 import { auth as apiAuth } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
-export default function LoginPage() {
+export default function ClientLoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [userId, setUserId] = useState<string | null>(null)
@@ -23,7 +22,6 @@ export default function LoginPage() {
 
     try {
       const res: any = await apiAuth.login({ identifier: email, password })
-      // login sends OTP; save returned userId and show OTP input
       setUserId(res.userId)
       setShowOtp(true)
     } catch (err) {
@@ -35,24 +33,23 @@ export default function LoginPage() {
     e.preventDefault()
     if (!userId) return
     setError('')
+
     try {
       const res: any = await apiAuth.verifyOtp({ userId, otp })
-      if (res.verified) {
-        if (res.role === 'client') {
-          setToken(null)
-          setUser(null)
-          setRole(null)
-          setError('Invalid user for this login.')
-          return
-        }
+      if (!res.verified) return
 
-        // store a client-side session marker so protected routes allow access
-        setToken(userId)
-        setUser(userId)
-        if (res.role) setRole(res.role)
-        // redirect to app
-        navigate('/app')
+      if (res.role !== 'client') {
+        setToken(null)
+        setUser(null)
+        setRole(null)
+        setError('Suspicious access detected: this login page is for clients only.')
+        return
       }
+
+      setToken(userId)
+      setUser(userId)
+      setRole(res.role)
+      navigate('/client')
     } catch (err) {
       setError((err as any)?.response?.data?.error || (err as any)?.message || 'OTP verification failed.')
     }
@@ -60,18 +57,12 @@ export default function LoginPage() {
 
   return (
     <div className="rounded-xl bg-white p-6 shadow-md">
-      <h1 className="text-2xl font-semibold mb-4">Sign in</h1>
+      <h1 className="text-2xl font-semibold mb-4">Client Sign in</h1>
       {error ? <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       <p className="mb-4 text-sm text-muted-foreground">
-        First time here?{' '}
-        <Link to="/auth/admin-signup" className="underline underline-offset-4">
-          create the first admin account
-        </Link>
-      </p>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Client account?{' '}
-        <Link to="/auth/client-login" className="underline underline-offset-4">
-          sign in from client portal
+        Staff account?{' '}
+        <Link to="/auth/login" className="underline underline-offset-4">
+          go to staff sign in
         </Link>
       </p>
 

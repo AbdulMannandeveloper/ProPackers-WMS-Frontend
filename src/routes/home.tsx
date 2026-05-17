@@ -1,6 +1,8 @@
 import { HomeLayout } from '@/layouts/home/layout'
-import HomeIndex from '@/pages/home/index'
 import type { RouteGroup } from '@/routes/types'
+import { Navigate } from 'react-router'
+
+const RedirectToLogin = () => <Navigate to="/auth/login" replace />
 
 export const homeRoutes: RouteGroup = {
   name: 'home',
@@ -8,11 +10,13 @@ export const homeRoutes: RouteGroup = {
   layout: HomeLayout,
   routes: [
     {
-      path: '/',
-      element: HomeIndex,
+      path: '',
+      element: RedirectToLogin,
       title: 'Home',
       permissions: [],
       requireAuth: false,
     },
   ],
 }
+
+export default homeRoutes
