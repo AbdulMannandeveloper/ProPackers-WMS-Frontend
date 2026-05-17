@@ -1,21 +1,28 @@
 import { useEffect, useState } from 'react'
-import { clients as apiClients } from '@/api'
-import { Button } from '@/components/ui/button'
+import { clients as apiClients, auth as apiAuth } from '@/api'
+import ClientServicesModal from './ClientServicesModal'
+import { Button } from '@/components/Shared Components'
 import { useAuthStore } from '@/stores/auth'
+import ClientFormModal from './ClientFormModal'
 
-type Client = { id: string; companyName?: string; email?: string }
+type Client = {
+  id: string
+  companyName?: string
+  contactName?: string
+  email?: string
+  mobile?: string
+  address?: string
+  userId?: string
+}
 
 export default function ClientList() {
   const [items, setItems] = useState<Client[]>([])
   const [loading, setLoading] = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
-  const [companyName, setCompanyName] = useState('')
-  const [contactName, setContactName] = useState('')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [address, setAddress] = useState('')
-
-  const adminId = useAuthStore((s) => s.userId)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<Client | null>(null)
+  const [servicesOpen, setServicesOpen] = useState(false)
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  const currentUserId = useAuthStore((s) => s.userId)
 
   const load = async () => {
     setLoading(true)
@@ -29,24 +36,67 @@ export default function ClientList() {
     }
   }
 
+  const handleCreateClick = () => {
+    setEditing(null)
+    setModalOpen(true)
+  }
+
+  const handleEditClick = (c: Client) => {
+    setEditing(c)
+    setModalOpen(true)
+  }
+
+  const handleSave = async (
+    payload: { companyName: string; contactName: string; email: string; mobile?: string; address?: string },
+    id?: string,
+  ) => {
+    if (id) {
+      await apiClients.updateClient(id, payload)
+    } else {
+      if (!currentUserId) throw new Error('Admin ID missing')
+      await apiClients.addClient({ ...payload, adminId: currentUserId })
+    }
+    await load()
+  }
+
   useEffect(() => {
     void load()
   }, [])
 
-  const handleCreate = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    if (!adminId) return alert('You must be signed in as admin to create clients.')
+  const handleDelete = async (c: Client) => {
+    const companyLabel = c.companyName || c.email || 'this client'
+    if (!confirm(`Delete client ${companyLabel}?`)) return
     try {
-      await apiClients.addClient({ adminId, companyName, contactName, email, phone, address })
-      setShowCreate(false)
-      setCompanyName('')
-      setContactName('')
-      setEmail('')
-      setPhone('')
-      setAddress('')
+      await apiClients.deleteClient(c.id)
       await load()
-    } catch (err: any) {
-      alert(err?.message || 'Failed to create client')
+    } catch (e) {
+      alert((e as any)?.message || 'Failed to delete client')
+    }
+  }
+
+  const handleViewServices = (c: Client) => {
+    setSelectedClientId(c.id)
+    setServicesOpen(true)
+  }
+
+  const handleSendResetEmail = async (c: Client) => {
+    if (!currentUserId) {
+      alert('Missing logged-in admin id. Please sign in again.')
+      return
+    }
+    if (!c.userId) {
+      alert('Client user ID not found.')
+      return
+    }
+
+    const clientLabel = c.companyName || c.email || 'this client'
+    if (!confirm(`Send reset-password email to ${clientLabel}?`)) return
+
+    try {
+      await apiAuth.resetPasswordForUser({ adminId: currentUserId, userId: c.userId })
+      alert('Password reset email sent successfully.')
+    } catch (e) {
+      alert((e as any)?.response?.data?.error || (e as any)?.message || 'Unable to send reset email')
     }
   }
 
@@ -54,56 +104,52 @@ export default function ClientList() {
     <div className="bg-white rounded-xl p-4 shadow">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-medium">Clients</h2>
-        <Button onClick={() => setShowCreate(true)}>New Client</Button>
+        <Button onClick={handleCreateClick}>New Client</Button>
       </div>
+      <ClientFormModal open={modalOpen} onClose={() => setModalOpen(false)} onSave={handleSave} initial={editing} />
+      <ClientServicesModal open={servicesOpen} clientId={selectedClientId} onClose={() => setServicesOpen(false)} onUpdated={() => void load()} />
 
       {loading ? (
         <div>Loading…</div>
       ) : (
-        <ul className="space-y-2">
-          {items.map((c) => (
-            <li key={c.id} className="border p-2 rounded">
-              <div className="font-medium">{c.companyName ?? '—'}</div>
-              <div className="text-sm text-muted-foreground">{c.email ?? '—'}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center">
-          <div className="bg-white p-6 rounded shadow-md w-full max-w-md">
-            <h3 className="text-lg font-medium mb-4">Create Client</h3>
-            <form onSubmit={handleCreate} className="space-y-3">
-              <div>
-                <label className="block text-sm">Company name</label>
-                <input className="mt-1 block w-full border rounded p-2" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm">Contact name</label>
-                <input className="mt-1 block w-full border rounded p-2" value={contactName} onChange={(e) => setContactName(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm">Email</label>
-                <input className="mt-1 block w-full border rounded p-2" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm">Phone</label>
-                <input className="mt-1 block w-full border rounded p-2" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm">Address</label>
-                <input className="mt-1 block w-full border rounded p-2" value={address} onChange={(e) => setAddress(e.target.value)} />
-              </div>
-
-              <div className="flex justify-end space-x-2">
-                <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
-                <Button type="submit">Create</Button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <table className="w-full text-left">
+          <thead>
+            <tr>
+              <th className="py-2">Company Name</th>
+              <th className="py-2">Contact Name</th>
+              <th className="py-2">Email</th>
+              <th className="py-2">Phone</th>
+              <th className="py-2">Services</th>
+              <th className="py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((c) => (
+              <tr key={c.id} className="border-t">
+                <td className="py-2">{c.companyName ?? '—'}</td>
+                <td className="py-2">{c.contactName ?? '—'}</td>
+                <td className="py-2">{c.email ?? '—'}</td>
+                <td className="py-2">{c.mobile ?? '—'}</td>
+                <td className="py-2">
+                  <Button variant="ghost" size="sm" onClick={() => handleViewServices(c)}>Services</Button>
+                </td>
+                <td className="py-2">
+                  <Button variant="ghost" size="sm" onClick={() => handleEditClick(c)}>
+                    Edit
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => handleSendResetEmail(c)} className="ml-2">
+                    Send Reset Email
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDelete(c)} className="ml-2">
+                    Delete
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )
 }
+

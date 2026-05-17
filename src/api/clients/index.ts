@@ -9,4 +9,8 @@ export const getAllClients = (): Promise<Client[]> => httpClient({ method: 'GET'
 
 export const getClientById = (id: string): Promise<Client> => httpClient({ method: 'GET', url: `${BASE}/${id}` })
 
-export default { addClient, getAllClients, getClientById }
+export const updateClient = (id: string, payload: { companyName?: string; contactName?: string; email?: string; mobile?: string; address?: string }) => httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
+
+export const deleteClient = (id: string) => httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
+
+export default { addClient, getAllClients, getClientById, updateClient, deleteClient }

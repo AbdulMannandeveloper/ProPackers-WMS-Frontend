@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { services as apiServices } from '@/api'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/Shared Components'
+import ServiceFormModal from './ServiceFormModal'
 
-type Service = { id: string; description?: string; ideaPrice?: number; unit?: string }
+type Service = {
+  id: string
+  description?: string
+  ideaPrice?: number
+  unit?: string
+}
 
 export default function ServiceList() {
   const [items, setItems] = useState<Service[]>([])
   const [loading, setLoading] = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
-  const [description, setDescription] = useState('')
-  const [ideaPrice, setIdeaPrice] = useState('')
-  const [unit, setUnit] = useState('')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<Service | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -24,21 +28,37 @@ export default function ServiceList() {
     }
   }
 
+  const handleCreateClick = () => {
+    setEditing(null)
+    setModalOpen(true)
+  }
+
+  const handleEditClick = (s: Service) => {
+    setEditing(s)
+    setModalOpen(true)
+  }
+
+  const handleSave = async (payload: { description: string; ideaPrice: number; unit: string }, id?: string) => {
+    if (id) {
+      await apiServices.updateService(id, payload)
+    } else {
+      await apiServices.createService(payload)
+    }
+    await load()
+  }
+
   useEffect(() => {
     void load()
   }, [])
 
-  const handleCreate = async (e?: React.FormEvent) => {
-    e?.preventDefault()
+  const handleDelete = async (s: Service) => {
+    const serviceLabel = s.description || 'this service'
+    if (!confirm(`Delete service ${serviceLabel}?`)) return
     try {
-      await apiServices.createService({ description, ideaPrice: Number(ideaPrice || 0), unit })
-      setShowCreate(false)
-      setDescription('')
-      setIdeaPrice('')
-      setUnit('')
+      await apiServices.deleteService(s.id)
       await load()
-    } catch (err: any) {
-      alert(err?.message || 'Failed to create service')
+    } catch (e) {
+      alert((e as any)?.message || 'Failed to delete service')
     }
   }
 
@@ -46,47 +66,40 @@ export default function ServiceList() {
     <div className="bg-white rounded-xl p-4 shadow">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-medium">Services</h2>
-        <Button onClick={() => setShowCreate(true)}>New Service</Button>
+        <Button onClick={handleCreateClick}>New Service</Button>
       </div>
+      <ServiceFormModal open={modalOpen} onClose={() => setModalOpen(false)} onSave={handleSave} initial={editing} />
 
       {loading ? (
         <div>Loading…</div>
       ) : (
-        <ul className="space-y-2">
-          {items.map((s) => (
-            <li key={s.id} className="border p-2 rounded">
-              <div className="font-medium">{s.description ?? '—'}</div>
-              <div className="text-sm text-muted-foreground">Price: {s.ideaPrice ?? '—'} {s.unit ?? ''}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center">
-          <div className="bg-white p-6 rounded shadow-md w-full max-w-md">
-            <h3 className="text-lg font-medium mb-4">Create Service</h3>
-            <form onSubmit={handleCreate} className="space-y-3">
-              <div>
-                <label className="block text-sm">Description</label>
-                <input className="mt-1 block w-full border rounded p-2" value={description} onChange={(e) => setDescription(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm">Idea Price</label>
-                <input className="mt-1 block w-full border rounded p-2" value={ideaPrice} onChange={(e) => setIdeaPrice(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm">Unit</label>
-                <input className="mt-1 block w-full border rounded p-2" value={unit} onChange={(e) => setUnit(e.target.value)} />
-              </div>
-
-              <div className="flex justify-end space-x-2">
-                <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
-                <Button type="submit">Create</Button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <table className="w-full text-left">
+          <thead>
+            <tr>
+              <th className="py-2">Description</th>
+              <th className="py-2">Price</th>
+              <th className="py-2">Unit</th>
+              <th className="py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((s) => (
+              <tr key={s.id} className="border-t">
+                <td className="py-2">{s.description ?? '—'}</td>
+                <td className="py-2">{s.ideaPrice ?? '—'}</td>
+                <td className="py-2">{s.unit ?? '—'}</td>
+                <td className="py-2">
+                  <Button variant="ghost" size="sm" onClick={() => handleEditClick(s)}>
+                    Edit
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDelete(s)} className="ml-2">
+                    Delete
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )

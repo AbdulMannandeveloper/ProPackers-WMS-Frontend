@@ -7,4 +7,10 @@ export const createService = (payload: { description: string; ideaPrice: number;
 
 export const getAllServices = (): Promise<Service[]> => httpClient({ method: 'GET', url: `${BASE}/` })
 
-export default { createService, getAllServices }
+export const getServiceById = (id: string): Promise<Service> => httpClient({ method: 'GET', url: `${BASE}/${id}` })
+
+export const updateService = (id: string, payload: { description?: string; ideaPrice?: number; unit?: string }) => httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
+
+export const deleteService = (id: string) => httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
+
+export default { createService, getAllServices, getServiceById, updateService, deleteService }

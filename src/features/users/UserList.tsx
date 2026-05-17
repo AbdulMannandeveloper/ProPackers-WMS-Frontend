@@ -98,7 +98,7 @@ export default function UserList() {
             </tr>
           </thead>
           <tbody>
-            {items.map((u) => (
+            {items.filter((u) => u.role !== 'client').map((u) => (
               <tr key={u.id} className="border-t">
                 <td className="py-2">{(u.firstName || '') + ' ' + (u.lastName || '')}</td>
                 <td className="py-2">{u.username ?? '—'}</td>
