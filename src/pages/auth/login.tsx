@@ -16,6 +16,7 @@ export default function LoginPage() {
   const setUser = useAuthStore((s) => s.setUserId)
   const setToken = useAuthStore((s) => s.setToken)
   const setRole = useAuthStore((s) => s.setRole)
+  const setDisplayName = useAuthStore((s) => s.setDisplayName)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,6 +51,35 @@ export default function LoginPage() {
         setToken(userId)
         setUser(userId)
         if (res.role) setRole(res.role)
+        // fetch display name and persist it so layout doesn't need to fetch
+        try {
+          const users = await (await import('@/api')).users.getAllUsers()
+          const currentUser = Array.isArray(users) ? users.find((u: any) => u.id === userId) : null
+          const name = currentUser?.username?.trim() || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ').trim() || null
+          setDisplayName(name)
+        } catch {
+          setDisplayName(null)
+        }
+
+        // Automatically record Clock-In if it's an employee or admin
+        if (res.role === 'admin' || res.role === 'employee') {
+          try {
+            const { attendance: attendanceApi } = await import('@/api')
+            const logs = await attendanceApi.getAttendanceLogByField('userId', userId)
+            const todayStr = new Date().toISOString().split('T')[0]
+            const hasTodayLog = logs.some((l) => l.date && l.date.split('T')[0] === todayStr)
+            if (!hasTodayLog) {
+              await attendanceApi.createAttendanceLog({
+                userId,
+                loginTimestamp: new Date().toISOString(),
+                date: `${todayStr}T00:00:00.000Z`,
+              })
+            }
+          } catch (err) {
+            console.error('Failed to auto clock-in on login:', err)
+          }
+        }
+
         // redirect to app
         navigate('/app')
       }
@@ -59,49 +89,59 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md">
-      <h1 className="text-2xl font-semibold mb-4">Sign in</h1>
-      {error ? <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
-      <p className="mb-4 text-sm text-muted-foreground">
-        First time here?{' '}
-        <Link to="/auth/admin-signup" className="underline underline-offset-4">
-          create the first admin account
-        </Link>
-      </p>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Client account?{' '}
-        <Link to="/auth/client-login" className="underline underline-offset-4">
-          sign in from client portal
-        </Link>
-      </p>
+    <div className="app-auth">
+      <div className="app-auth__panel p-6 sm:p-7 lg:p-8">
+        <div className="app-auth__brand text-left">
+          <div className="app-auth__brand-mark !mx-0">
+            <img src="/Logo.png" alt="logo" className="h-7 w-7 object-contain" />
+          </div>
+          <h1 className="auth-hero-title mt-4">Welcome back</h1>
+          <p className="auth-hero-subtitle">Sign in to your workspace</p>
+        </div>
 
-      {!showOtp ? (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Email</label>
-            <input className="mt-1 block w-full border rounded p-2" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Password</label>
-            <input type="password" className="mt-1 block w-full border rounded p-2" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
+        {error ? <div className="mt-5 auth-alert auth-alert--error">{error}</div> : null}
 
-          <div className="flex justify-end">
-            <Button type="submit">Sign in</Button>
-          </div>
-        </form>
-      ) : (
-        <form onSubmit={handleVerify} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Enter OTP</label>
-            <input className="mt-1 block w-full border rounded p-2" value={otp} onChange={(e) => setOtp(e.target.value)} />
-          </div>
-          <div className="flex justify-between">
-            <Button variant="secondary" type="button" onClick={() => setShowOtp(false)}>Back</Button>
-            <Button type="submit">Verify</Button>
-          </div>
-        </form>
-      )}
+        <div className="auth-divider"><span>Secure sign in</span></div>
+
+        {!showOtp ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="auth-label">Email or Username</label>
+              <input className="auth-input" placeholder="daniel.hughes" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="auth-label">Password</label>
+              <input type="password" className="auth-input" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+
+            <Button type="submit" className="auth-button">
+              Sign in
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerify} className="space-y-4">
+            <div>
+              <label className="auth-label">One-time password</label>
+              <input className="auth-input tracking-[0.35em] text-center text-lg" placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="secondary" type="button" onClick={() => setShowOtp(false)} className="auth-button--secondary">
+                Back
+              </Button>
+              <Button type="submit" className="auth-button">
+                Verify OTP
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <div className="mt-5 flex items-center justify-between gap-4 text-sm text-slate-500">
+          <p>Admin and employee use the same login.</p>
+          <Link to="/auth/client-login" className="auth-link whitespace-nowrap">
+            Client login
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }

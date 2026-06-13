@@ -40,48 +40,52 @@ export default function AdminSignupPage() {
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold">First admin signup</h1>
-        <p className="text-sm text-muted-foreground">
-          This page works only until the first admin account exists. After that, the backend will reject new submissions.
-        </p>
+    <div className="app-auth">
+      <div className="app-auth__panel p-6 sm:p-7 lg:p-8">
+        <div className="app-auth__brand text-left">
+          <div className="app-auth__brand-mark !mx-0">
+            <img src="/Logo.png" alt="logo" className="h-7 w-7 object-contain" />
+          </div>
+          <h1 className="auth-hero-title mt-4">Create admin account</h1>
+          <p className="auth-hero-subtitle">Set up the first administrator</p>
+        </div>
+        <div className="auth-note mt-4">This invitation is only used once during initial setup.</div>
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="auth-label">First name</label>
+              <input className="auth-input" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+            </div>
+            <div>
+              <label className="auth-label">Last name</label>
+              <input className="auth-input" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+            </div>
+          </div>
+
+          <div>
+            <label className="auth-label">Username</label>
+            <input className="auth-input" value={username} onChange={(e) => setUsername(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="auth-label">Email</label>
+            <input type="email" className="auth-input" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+
+          {error ? <div className="auth-alert auth-alert--error">{error}</div> : null}
+          {message ? <div className="auth-alert auth-alert--success">{message}</div> : null}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Link to="/auth/login" className="auth-button--secondary">
+              Back
+            </Link>
+            <Button type="submit" disabled={loading} className="auth-button">
+              {loading ? 'Submitting…' : 'Create admin'}
+            </Button>
+          </div>
+        </form>
       </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block text-sm font-medium">First name</label>
-            <input className="mt-1 block w-full rounded border p-2" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Last name</label>
-            <input className="mt-1 block w-full rounded border p-2" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium">Username</label>
-          <input className="mt-1 block w-full rounded border p-2" value={username} onChange={(e) => setUsername(e.target.value)} />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium">Email</label>
-          <input type="email" className="mt-1 block w-full rounded border p-2" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </div>
-
-        {error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
-        {message ? <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div> : null}
-
-        <div className="flex items-center justify-between gap-3">
-          <Link to="/auth/login" className="text-sm text-muted-foreground underline underline-offset-4">
-            Back to login
-          </Link>
-          <Button type="submit" disabled={loading}>
-            {loading ? 'Submitting…' : 'Create first admin'}
-          </Button>
-        </div>
-      </form>
     </div>
   )
 }

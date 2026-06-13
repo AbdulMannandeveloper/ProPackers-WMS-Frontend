@@ -1,5 +1,4 @@
 import httpClient from '../http-client'
-import type { Service } from '../types'
 
 const BASE = '/api/client-services'
 
@@ -8,11 +7,17 @@ export const addClientService = (payload: { clientId: string; serviceId: string;
 
 export const getAllClientServices = () => httpClient({ method: 'GET', url: `${BASE}/` })
 
-export const getClientServicesByClientId = (clientId: string) =>
-  httpClient({ method: 'GET', url: `${BASE}/client/${clientId}` })
+export const getClientServicesByClientId = async (clientId: string) => {
+  const all = await getAllClientServices()
+  if (!Array.isArray(all)) return []
+  return all.filter((entry: any) => entry?.clientId === clientId)
+}
 
-export const getClientServicesByServiceId = (serviceId: string) =>
-  httpClient({ method: 'GET', url: `${BASE}/service/${serviceId}` })
+export const getClientServicesByServiceId = async (serviceId: string) => {
+  const all = await getAllClientServices()
+  if (!Array.isArray(all)) return []
+  return all.filter((entry: any) => entry?.serviceId === serviceId)
+}
 
 export const updateClientService = (id: string, payload: { chargedPrice?: number; unit?: string }) =>
   httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })

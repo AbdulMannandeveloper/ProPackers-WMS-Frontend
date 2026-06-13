@@ -35,10 +35,17 @@ export default function UserList() {
   }
 
   const handleSave = async (payload: { firstName: string; lastName: string; email: string; username?: string | null; role: string }, id?: string) => {
+    const cleanPayload = {
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      email: payload.email,
+      role: payload.role,
+      username: payload.username ?? undefined,
+    }
     if (id) {
-      await apiUsers.updateUser(id, payload)
+      await apiUsers.updateUser(id, cleanPayload)
     } else {
-      await apiUsers.addUser(payload)
+      await apiUsers.addUser(cleanPayload)
     }
     await load()
   }
@@ -48,6 +55,12 @@ export default function UserList() {
   }, [])
 
   const handleToggleActive = async (u: User) => {
+    // Prevent toggling active state if user hasn't completed password setup
+    if (!u.passwordHash) {
+      alert('Cannot change active state until this user has completed their password setup.')
+      return
+    }
+
     const makeActive = !u.isActive
     const action = makeActive ? 'Activate' : 'Deactivate'
     if (!confirm(`${action} user ${u.firstName || ''} ${u.lastName || ''}?`)) return
@@ -107,7 +120,19 @@ export default function UserList() {
                 <td className="py-2">
                   <Button variant="ghost" size="sm" onClick={() => handleEditClick(u)}>Edit</Button>
                   <Button variant="secondary" size="sm" onClick={() => handleSendResetEmail(u)} className="ml-2">Send Reset Email</Button>
-                  <Button variant={u.isActive ? 'destructive' : 'default'} size="sm" onClick={() => handleToggleActive(u)} className="ml-2">{u.isActive ? 'Deactivate' : 'Activate'}</Button>
+                  {
+                    // Disable activate/deactivate if user hasn't set a password yet
+                  }
+                  <Button
+                    variant={u.isActive ? 'destructive' : 'default'}
+                    size="sm"
+                    onClick={() => handleToggleActive(u)}
+                    className="ml-2"
+                    disabled={!u.passwordHash}
+                    title={!u.passwordHash ? 'User has not completed password setup' : undefined}
+                  >
+                    {u.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
                 </td>
               </tr>
             ))}

@@ -28,7 +28,7 @@ export default function ClientList() {
     setLoading(true)
     try {
       const data = await apiClients.getAllClients()
-      setItems(Array.isArray(data) ? data : [])
+      setItems(Array.isArray(data) ? (data as Client[]) : [])
     } catch (_) {
       setItems([])
     } finally {

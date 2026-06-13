@@ -8,12 +8,23 @@ import { homeRoutes } from '@/routes/home.tsx'
 import { authRoutes } from '@/routes/auth'
 import { appRoutes } from '@/routes/app'
 import { clientRoutes } from '@/routes/client'
+import AdminSignupPage from '@/pages/auth/admin-signup'
 import SetupPasswordPage from '@/pages/auth/setup-password'
+import Error403 from '@/pages/error/403'
+import NotFound404 from '@/pages/error/404'
 
 function App() {
+  const AppLayout = appRoutes.layout ?? Fragment
+  const ClientLayout = clientRoutes.layout ?? Fragment
+
   return (
     <BrowserRouter>
       <Routes>
+        <Route
+          path="/admin-signup"
+          element={<AuthLayout><AdminSignupPage /></AuthLayout>}
+        />
+
         <Route
           path="/setup-password"
           element={<AuthLayout><SetupPasswordPage /></AuthLayout>}
@@ -32,6 +43,7 @@ function App() {
                 <ProtectedRoute
                   permissions={route.permissions}
                   requireAuth={route.requireAuth}
+                  allowedRoles={route.allowedRoles}
                 >
                   <Layout>
                     <RouteComponent />
@@ -55,6 +67,7 @@ function App() {
                 <ProtectedRoute
                   permissions={route.permissions}
                   requireAuth={route.requireAuth}
+                  allowedRoles={route.allowedRoles}
                 >
                   <Layout>
                     <RouteComponent />
@@ -78,6 +91,7 @@ function App() {
                 <ProtectedRoute
                   permissions={route.permissions}
                   requireAuth={route.requireAuth}
+                  allowedRoles={route.allowedRoles}
                 >
                   <Layout>
                     <RouteComponent />
@@ -101,6 +115,7 @@ function App() {
                 <ProtectedRoute
                   permissions={route.permissions}
                   requireAuth={route.requireAuth}
+                  allowedRoles={route.allowedRoles}
                 >
                   <Layout>
                     <RouteComponent />
@@ -111,6 +126,33 @@ function App() {
           )
         })}
 
+        <Route
+          path="/app/*"
+          element={
+            <ProtectedRoute permissions={[]} requireAuth allowedRoles={['admin', 'employee']}>
+              <AppLayout>
+                <NotFound404 />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/client/*"
+          element={
+            <ProtectedRoute permissions={[]} requireAuth allowedRoles={['client']}>
+              <ClientLayout>
+                <NotFound404 />
+              </ClientLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* error routes */}
+        <Route path="/error/403" element={<Error403 />} />
+
+        {/* catch-all 404 */}
+        <Route path="*" element={<NotFound404 />} />
         {/* More routes go here like auth routes, error routes, etc. */}
       </Routes>
     </BrowserRouter>

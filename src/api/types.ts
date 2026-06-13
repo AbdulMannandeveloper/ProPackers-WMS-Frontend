@@ -25,6 +25,12 @@ export interface Employee {
   employeeUniqueNumber: string
   jobTitle?: string | null
   email?: string | null
+  user?: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+  }
 }
 
 export interface Service {

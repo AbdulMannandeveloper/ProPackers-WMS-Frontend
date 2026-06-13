@@ -82,87 +82,92 @@ export default function SetupPasswordPage() {
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold">Set your password</h1>
-        <p className="text-sm text-muted-foreground">
-          Create a password to complete your account setup.
-        </p>
-      </div>
-
-      <div className="mb-6 rounded-lg border bg-slate-50 p-4">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Account details</h2>
-        {previewLoading ? (
-          <div className="text-sm text-slate-500">Loading invitation details…</div>
-        ) : preview ? (
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-slate-500">First name</dt>
-              <dd className="font-medium text-slate-900">{preview.firstName}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Last name</dt>
-              <dd className="font-medium text-slate-900">{preview.lastName}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Username</dt>
-              <dd className="font-medium text-slate-900">{preview.username || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Email</dt>
-              <dd className="font-medium text-slate-900">{preview.email}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Role</dt>
-              <dd className="font-medium text-slate-900">{preview.role}</dd>
-            </div>
-          </dl>
-        ) : (
-          <div className="text-sm text-slate-500">No invitation details loaded yet.</div>
-        )}
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium">Password</label>
-          <input
-            type="password"
-            className="mt-1 block w-full rounded border p-2"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium">Confirm password</label>
-          <input
-            type="password"
-            className="mt-1 block w-full rounded border p-2"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
-        </div>
-
-        {!token ? (
-          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            No token found in the URL. Open the email link again.
+    <div className="app-auth">
+      <div className="app-auth__panel p-6 sm:p-7 lg:p-8">
+        <div className="app-auth__brand text-left">
+          <div className="app-auth__brand-mark !mx-0">
+            <img src="/Logo.png" alt="logo" className="h-7 w-7 object-contain" />
           </div>
-        ) : null}
-
-        {error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
-        {message ? <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div> : null}
-
-        <div className="flex items-center justify-between gap-3">
-          <Link to="/auth/login" className="text-sm text-muted-foreground underline underline-offset-4">
-            Back to login
-          </Link>
-          <Button type="submit" disabled={loading || !token}>
-            {loading ? 'Saving…' : 'Set password'}
-          </Button>
+          <h1 className="auth-hero-title mt-4">Set your password</h1>
+          <p className="auth-hero-subtitle">Complete your account setup</p>
         </div>
-      </form>
+        <div className="auth-note mt-4">
+          This link is temporary and can only be used once to finish your account activation.
+        </div>
+        <div className="auth-preview mt-5">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Invitation details</div>
+          {previewLoading ? (
+            <div className="text-sm text-slate-500">Loading invitation details…</div>
+          ) : preview ? (
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="auth-label">First name</dt>
+                <dd className="mt-1 font-medium text-slate-900">{preview.firstName}</dd>
+              </div>
+              <div>
+                <dt className="auth-label">Last name</dt>
+                <dd className="mt-1 font-medium text-slate-900">{preview.lastName}</dd>
+              </div>
+              <div>
+                <dt className="auth-label">Username</dt>
+                <dd className="mt-1 font-medium text-slate-900">{preview.username || '—'}</dd>
+              </div>
+              <div>
+                <dt className="auth-label">Email</dt>
+                <dd className="mt-1 font-medium text-slate-900">{preview.email}</dd>
+              </div>
+              <div>
+                <dt className="auth-label">Role</dt>
+                <dd className="mt-1 font-medium text-slate-900">{preview.role}</dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="text-sm text-slate-500">No invitation details loaded yet.</div>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <div>
+            <label className="auth-label">Password</label>
+            <input
+              type="password"
+              className="auth-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="auth-label">Confirm password</label>
+            <input
+              type="password"
+              className="auth-input"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          {!token ? (
+            <div className="auth-alert auth-alert--error">
+              No token found in the URL. Open the email link again.
+            </div>
+          ) : null}
+
+          {error ? <div className="auth-alert auth-alert--error">{error}</div> : null}
+          {message ? <div className="auth-alert auth-alert--success">{message}</div> : null}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Link to="/auth/login" className="auth-button--secondary">
+              Back
+            </Link>
+            <Button type="submit" disabled={loading || !token} className="auth-button">
+              {loading ? 'Saving…' : 'Set password'}
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

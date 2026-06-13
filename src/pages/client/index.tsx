@@ -6,7 +6,6 @@ import clientServicesApi from '@/api/clientServices'
 export default function ClientPortalPage() {
   const userId = useAuthStore((s) => s.userId)
   const [loading, setLoading] = useState(false)
-  const [clientId, setClientId] = useState<string | null>(null)
   const [items, setItems] = useState<{ description: string; chargedPrice: number }[]>([])
   const [activeTab, setActiveTab] = useState<'overview' | 'services'>('overview')
 
@@ -20,10 +19,8 @@ export default function ClientPortalPage() {
         const myClient = Array.isArray(all) ? all.find((c: any) => c.userId === userId) : null
         if (!myClient) {
           setItems([])
-          setClientId(null)
           return
         }
-        setClientId(myClient.id)
 
         const [svcList, clientSvcList] = await Promise.all([
           apiServices.getAllServices(),

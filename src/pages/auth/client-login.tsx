@@ -15,6 +15,7 @@ export default function ClientLoginPage() {
   const setUser = useAuthStore((s) => s.setUserId)
   const setToken = useAuthStore((s) => s.setToken)
   const setRole = useAuthStore((s) => s.setRole)
+  const setDisplayName = useAuthStore((s) => s.setDisplayName)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,6 +50,14 @@ export default function ClientLoginPage() {
       setToken(userId)
       setUser(userId)
       setRole(res.role)
+      try {
+        const users = await (await import('@/api')).users.getAllUsers()
+        const currentUser = Array.isArray(users) ? users.find((u: any) => u.id === userId) : null
+        const name = currentUser?.username?.trim() || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ').trim() || null
+        setDisplayName(name)
+      } catch {
+        setDisplayName(null)
+      }
       navigate('/client')
     } catch (err) {
       setError((err as any)?.response?.data?.error || (err as any)?.message || 'OTP verification failed.')
@@ -56,43 +65,62 @@ export default function ClientLoginPage() {
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md">
-      <h1 className="text-2xl font-semibold mb-4">Client Sign in</h1>
-      {error ? <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
-      <p className="mb-4 text-sm text-muted-foreground">
-        Staff account?{' '}
-        <Link to="/auth/login" className="underline underline-offset-4">
-          go to staff sign in
-        </Link>
-      </p>
+    <div className="app-auth">
+      <div className="app-auth__panel p-6 sm:p-7 lg:p-8">
+        <div className="app-auth__brand text-left">
+          <div className="app-auth__brand-mark !mx-0">
+            <img src="/Logo.png" alt="logo" className="h-7 w-7 object-contain" />
+          </div>
+          <h1 className="auth-hero-title mt-4">Client sign in</h1>
+          <p className="auth-hero-subtitle">Access your services with email and OTP</p>
+        </div>
 
-      {!showOtp ? (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Email</label>
-            <input className="mt-1 block w-full border rounded p-2" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Password</label>
-            <input type="password" className="mt-1 block w-full border rounded p-2" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
+        {error ? <div className="mt-5 auth-alert auth-alert--error">{error}</div> : null}
 
-          <div className="flex justify-end">
-            <Button type="submit">Sign in</Button>
-          </div>
-        </form>
-      ) : (
-        <form onSubmit={handleVerify} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Enter OTP</label>
-            <input className="mt-1 block w-full border rounded p-2" value={otp} onChange={(e) => setOtp(e.target.value)} />
-          </div>
-          <div className="flex justify-between">
-            <Button variant="secondary" type="button" onClick={() => setShowOtp(false)}>Back</Button>
-            <Button type="submit">Verify</Button>
-          </div>
-        </form>
-      )}
+        <div className="auth-divider"><span>Client sign in</span></div>
+
+        {!showOtp ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="auth-label">Email</label>
+              <input className="auth-input" placeholder="client@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="auth-label">Password</label>
+              <input type="password" className="auth-input" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+
+            <Button type="submit" className="auth-button">
+              Continue to OTP
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerify} className="space-y-4">
+            <div className="auth-card">
+              <div className="text-sm font-medium text-slate-900">OTP verification</div>
+              <p className="mt-1 text-sm text-slate-600">Enter the one-time code sent to your email or device.</p>
+            </div>
+            <div>
+              <label className="auth-label">One-time password</label>
+              <input className="auth-input tracking-[0.35em] text-center text-lg" placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="secondary" type="button" onClick={() => setShowOtp(false)} className="auth-button--secondary">
+                Back
+              </Button>
+              <Button type="submit" className="auth-button">
+                Verify OTP
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <div className="mt-5 text-sm text-slate-500">
+          <Link to="/auth/login" className="auth-link">
+            Back to staff sign in
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }
