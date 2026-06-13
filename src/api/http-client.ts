@@ -17,10 +17,14 @@ const handleGlobalHttpError = (_error: AxiosError): void => {
 
 AXIOS_INSTANCE.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
+  const userId = useAuthStore.getState().userId
 
   if (token) {
     config.headers = config.headers ?? {}
     config.headers.Authorization = `Token ${token}`
+    if (userId) {
+      config.headers['x-user-id'] = userId
+    }
   }
 
   return config
