@@ -28,6 +28,8 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
   const [newPrice, setNewPrice] = useState<string>('')
   const [newUnit, setNewUnit] = useState<string>('')
   const [error, setError] = useState<string>('')
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = async () => {
     if (!clientId) return
@@ -71,15 +73,28 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
     }
   }
 
-  const handleDelete = async (id?: string) => {
+  const closeDeleteConfirm = () => {
+    if (deleting) return
+    setDeleteConfirmId(null)
+  }
+
+  const handleDeleteClick = (id?: string) => {
     if (!id) return
-    if (!confirm('Delete this client-service assignment?')) return
+    setDeleteConfirmId(id)
+  }
+
+  const executeDelete = async () => {
+    if (!deleteConfirmId) return
+    setDeleting(true)
     try {
-      await apiClientServices.deleteClientService(id)
+      await apiClientServices.deleteClientService(deleteConfirmId)
+      setDeleteConfirmId(null)
       void load()
       onUpdated?.()
     } catch (e) {
       alert((e as any)?.response?.data?.error || (e as any)?.message || 'Failed to delete')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -126,6 +141,7 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
   }
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -180,7 +196,7 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
                       </td>
                       <td className="py-2">
                         <Button size="sm" onClick={() => handleSaveEntry(it)}>Save</Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleDelete(it.id)} className="ml-2">Delete</Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleDeleteClick(it.id)} className="ml-2">Delete</Button>
                       </td>
                     </tr>
                 ))}
@@ -205,5 +221,30 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
         )}
       </div>
     </Modal>
+
+    <Modal
+      open={Boolean(deleteConfirmId)}
+      onClose={closeDeleteConfirm}
+      title="Delete Service Assignment"
+      description="This action cannot be undone."
+      size="sm"
+      closeOnBackdropClick={!deleting}
+      closeOnEsc={!deleting}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={closeDeleteConfirm} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={() => void executeDelete()} disabled={deleting}>
+            {deleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </div>
+      }
+    >
+      <p className="text-sm text-muted-foreground">
+        Are you sure you want to delete this client-service assignment?
+      </p>
+    </Modal>
+    </>
   )
 }

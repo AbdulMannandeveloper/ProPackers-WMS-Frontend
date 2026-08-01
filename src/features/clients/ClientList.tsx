@@ -1,10 +1,10 @@
 import { useEffect, useState, useMemo } from 'react'
 import { clients as apiClients, auth as apiAuth } from '@/api'
 import ClientServicesModal from './ClientServicesModal'
-import { Button } from '@/components/Shared Components'
+import { Button, Modal } from '@/components/Shared Components'
 import { useAuthStore } from '@/stores/auth'
 import ClientFormModal from './ClientFormModal'
-import { Search } from 'lucide-react'
+import { Search, Briefcase, Pencil, KeyRound, Trash2 } from 'lucide-react'
 
 type Client = {
   id: string
@@ -16,6 +16,8 @@ type Client = {
   userId?: string
 }
 
+type ConfirmAction = 'delete' | 'resetEmail'
+
 export default function ClientList() {
   const [items, setItems] = useState<Client[]>([])
   const [loading, setLoading] = useState(false)
@@ -24,6 +26,10 @@ export default function ClientList() {
   const [servicesOpen, setServicesOpen] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const currentUserId = useAuthStore((s) => s.userId)
+
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [confirmClient, setConfirmClient] = useState<Client | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -66,15 +72,19 @@ export default function ClientList() {
     void load()
   }, [])
 
-  const handleDelete = async (c: Client) => {
-    const companyLabel = c.companyName || c.email || 'this client'
-    if (!confirm(`Delete client ${companyLabel}?`)) return
-    try {
-      await apiClients.deleteClient(c.id)
-      await load()
-    } catch (e) {
-      alert((e as any)?.message || 'Failed to delete client')
-    }
+  const closeConfirmModal = () => {
+    if (actionLoading) return
+    setConfirmAction(null)
+    setConfirmClient(null)
+  }
+
+  const openConfirm = (action: ConfirmAction, client: Client) => {
+    setConfirmClient(client)
+    setConfirmAction(action)
+  }
+
+  const handleDelete = (c: Client) => {
+    openConfirm('delete', c)
   }
 
   const handleViewServices = (c: Client) => {
@@ -82,7 +92,7 @@ export default function ClientList() {
     setServicesOpen(true)
   }
 
-  const handleSendResetEmail = async (c: Client) => {
+  const handleSendResetEmail = (c: Client) => {
     if (!currentUserId) {
       alert('Missing logged-in admin id. Please sign in again.')
       return
@@ -91,17 +101,77 @@ export default function ClientList() {
       alert('Client user ID not found.')
       return
     }
+    openConfirm('resetEmail', c)
+  }
 
-    const clientLabel = c.companyName || c.email || 'this client'
-    if (!confirm(`Send reset-password email to ${clientLabel}?`)) return
+  const executeConfirmAction = async () => {
+    if (!confirmAction || !confirmClient) return
 
+    setActionLoading(true)
     try {
-      await apiAuth.resetPasswordForUser({ adminId: currentUserId, userId: c.userId })
-      alert('Password reset email sent successfully.')
+      if (confirmAction === 'delete') {
+        await apiClients.deleteClient(confirmClient.id)
+        await load()
+      } else if (confirmAction === 'resetEmail') {
+        if (!currentUserId) {
+          alert('Missing logged-in admin id. Please sign in again.')
+          return
+        }
+        if (!confirmClient.userId) {
+          alert('Client user ID not found.')
+          return
+        }
+        await apiAuth.resetPasswordForUser({ adminId: currentUserId, userId: confirmClient.userId })
+        alert('Password reset email sent successfully.')
+      }
+
+      setConfirmAction(null)
+      setConfirmClient(null)
     } catch (e) {
-      alert((e as any)?.response?.data?.error || (e as any)?.message || 'Unable to send reset email')
+      if (confirmAction === 'delete') {
+        alert((e as any)?.message || 'Failed to delete client')
+      } else if (confirmAction === 'resetEmail') {
+        alert((e as any)?.response?.data?.error || (e as any)?.message || 'Unable to send reset email')
+      }
+    } finally {
+      setActionLoading(false)
     }
   }
+
+  const confirmClientLabel =
+    confirmClient?.companyName || confirmClient?.email || 'this client'
+
+  const confirmModalTitle =
+    confirmAction === 'delete'
+      ? 'Delete Client'
+      : confirmAction === 'resetEmail'
+        ? 'Send Reset Email'
+        : ''
+
+  const confirmModalDescription =
+    confirmAction === 'delete'
+      ? 'This action cannot be undone.'
+      : confirmAction === 'resetEmail'
+        ? 'A password reset link will be emailed to this client.'
+        : undefined
+
+  const confirmModalBody =
+    confirmAction === 'delete'
+      ? `Are you sure you want to delete client ${confirmClientLabel}?`
+      : confirmAction === 'resetEmail'
+        ? `Send reset-password email to ${confirmClientLabel}?`
+        : ''
+
+  const confirmButtonLabel =
+    confirmAction === 'delete'
+      ? actionLoading
+        ? 'Deleting…'
+        : 'Delete'
+      : confirmAction === 'resetEmail'
+        ? actionLoading
+          ? 'Sending…'
+          : 'Send Email'
+        : 'Confirm'
 
   const filteredItems = useMemo(() => {
     return items.filter((c) => {
@@ -140,6 +210,32 @@ export default function ClientList() {
       <ClientFormModal open={modalOpen} onClose={() => setModalOpen(false)} onSave={handleSave} initial={editing} />
       <ClientServicesModal open={servicesOpen} clientId={selectedClientId} onClose={() => setServicesOpen(false)} onUpdated={() => void load()} />
 
+      <Modal
+        open={Boolean(confirmAction && confirmClient)}
+        onClose={closeConfirmModal}
+        title={confirmModalTitle}
+        description={confirmModalDescription}
+        size="sm"
+        closeOnBackdropClick={!actionLoading}
+        closeOnEsc={!actionLoading}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={closeConfirmModal} disabled={actionLoading}>
+              Cancel
+            </Button>
+            <Button
+              variant={confirmAction === 'delete' ? 'destructive' : 'default'}
+              onClick={() => void executeConfirmAction()}
+              disabled={actionLoading}
+            >
+              {confirmButtonLabel}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-muted-foreground">{confirmModalBody}</p>
+      </Modal>
+
       <div className="p-0 overflow-x-auto">
         {loading ? (
           <div className="py-12 text-center text-muted-foreground">Loading clients...</div>
@@ -157,37 +253,67 @@ export default function ClientList() {
             )}
           </div>
         ) : (
-          <table className="w-full text-left whitespace-nowrap">
+          <table className="w-full text-left">
             <thead>
-              <tr className="bg-muted/30">
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Company Name</th>
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Contact Name</th>
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Email</th>
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Phone</th>
-                <th className="py-3 px-5 w-0"></th>
-                <th className="py-3 px-5 w-0"></th>
-                <th className="py-3 px-5 w-0"></th>
-                <th className="py-3 px-5 w-0"></th>
+              <tr className="border-b border-border">
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Company Name</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Contact Name</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Email</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Phone</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground text-right w-[1%] whitespace-nowrap">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filteredItems.map((c) => (
-                <tr key={c.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="py-3 px-5 font-medium text-foreground">{c.companyName ?? '—'}</td>
-                  <td className="py-3 px-5 text-muted-foreground">{c.contactName ?? '—'}</td>
-                  <td className="py-3 px-5 text-muted-foreground">{c.email ?? '—'}</td>
-                  <td className="py-3 px-5 text-muted-foreground">{c.mobile ?? '—'}</td>
-                  <td className="py-3 px-1 text-right">
-                    <Button variant="default" size="sm" onClick={() => handleViewServices(c)}>Services</Button>
-                  </td>
-                  <td className="py-3 px-1 text-right">
-                    <Button variant="outline" size="sm" onClick={() => handleEditClick(c)}>Edit</Button>
-                  </td>
-                  <td className="py-3 px-1 text-right">
-                    <Button variant="secondary" size="sm" onClick={() => handleSendResetEmail(c)}>Send Reset Email</Button>
-                  </td>
-                  <td className="py-3 px-2 pr-5 text-right">
-                    <Button variant="destructive" size="sm" onClick={() => handleDelete(c)}>Delete</Button>
+                <tr key={c.id} className="group transition-colors hover:bg-slate-50/80">
+                  <td className="py-3.5 px-5 font-medium text-foreground">{c.companyName ?? '—'}</td>
+                  <td className="py-3.5 px-5 text-sm text-muted-foreground">{c.contactName ?? '—'}</td>
+                  <td className="py-3.5 px-5 text-sm text-muted-foreground">{c.email ?? '—'}</td>
+                  <td className="py-3.5 px-5 text-sm text-muted-foreground">{c.mobile ?? '—'}</td>
+                  <td className="py-3.5 px-5">
+                    <div className="flex justify-end">
+                      <div className="inline-flex items-center gap-0.5 rounded-lg border border-border/80 bg-white p-0.5 shadow-sm">
+                        <button
+                          type="button"
+                          title="Manage services"
+                          aria-label="Manage services"
+                          onClick={() => handleViewServices(c)}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          <Briefcase className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Edit client"
+                          aria-label="Edit client"
+                          onClick={() => handleEditClick(c)}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          <Pencil className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Send password reset email"
+                          aria-label="Send password reset email"
+                          onClick={() => handleSendResetEmail(c)}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          <KeyRound className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                        <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+                        <button
+                          type="button"
+                          title="Delete client"
+                          aria-label="Delete client"
+                          onClick={() => handleDelete(c)}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ))}
