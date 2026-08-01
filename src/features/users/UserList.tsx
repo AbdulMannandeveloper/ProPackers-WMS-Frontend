@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { users as apiUsers, auth as apiAuth } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/Shared Components'
-import { Search } from 'lucide-react'
+import { Search, Pencil, KeyRound, Trash2, UserX, UserCheck } from 'lucide-react'
 import type { User } from './types'
 import UserFormModal from './UserFormModal'
 import { useAuthStore } from '@/stores/auth'
@@ -304,69 +304,111 @@ export default function UserList() {
             )}
           </div>
         ) : (
-          <table className="w-full text-left whitespace-nowrap">
+          <table className="w-full text-left">
             <thead>
-              <tr className="bg-muted/30">
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Name</th>
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Username</th>
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Email</th>
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Role</th>
-                <th className="py-3 px-5 font-medium text-muted-foreground text-sm">Status</th>
-                <th className="py-3 px-5 w-0"></th>
-                <th className="py-3 px-5 w-0"></th>
-                <th className="py-3 px-5 w-0"></th>
+              <tr className="border-b border-border">
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Name</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Username</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Email</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Role</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
+                <th className="py-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground text-right w-[1%] whitespace-nowrap">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filteredItems.map((u) => {
                 const isPending = !u.passwordHash
-                const statusColor = isPending ? 'bg-amber-100 text-amber-700 border-amber-200' : (u.isActive ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200')
                 const statusText = isPending ? 'Pending' : (u.isActive ? 'Active' : 'Deactivated')
-                
-                const roleColor = u.role === 'admin' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-blue-100 text-blue-700 border-blue-200'
+                const statusClass = isPending
+                  ? 'bg-amber-50 text-amber-700 ring-amber-200/80'
+                  : u.isActive
+                    ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80'
+                    : 'bg-slate-100 text-slate-600 ring-slate-200/80'
+                const roleClass =
+                  u.role === 'admin'
+                    ? 'bg-violet-50 text-violet-700 ring-violet-200/80'
+                    : 'bg-sky-50 text-sky-700 ring-sky-200/80'
 
                 return (
-                  <tr key={u.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="py-3 px-5 font-medium text-foreground">
-                      {(u.firstName || '') + ' ' + (u.lastName || '')}
+                  <tr key={u.id} className="group transition-colors hover:bg-slate-50/80">
+                    <td className="py-3.5 px-5">
+                      <div className="font-medium text-foreground leading-tight">
+                        {(u.firstName || '') + ' ' + (u.lastName || '')}
+                      </div>
                     </td>
-                    <td className="py-3 px-5 text-muted-foreground">{u.username ?? '—'}</td>
-                    <td className="py-3 px-5 text-muted-foreground">{u.email ?? '—'}</td>
-                    <td className="py-3 px-5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border capitalize ${roleColor}`}>
+                    <td className="py-3.5 px-5 text-sm text-muted-foreground tabular-nums">
+                      {u.username ?? '—'}
+                    </td>
+                    <td className="py-3.5 px-5 text-sm text-muted-foreground">
+                      {u.email ?? '—'}
+                    </td>
+                    <td className="py-3.5 px-5">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${roleClass}`}>
                         {u.role ?? '—'}
                       </span>
                     </td>
-                    <td className="py-3 px-5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${statusColor}`}>
+                    <td className="py-3.5 px-5">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusClass}`}>
                         {statusText}
                       </span>
                     </td>
-                    <td className="py-3 px-2 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleEditClick(u)}>Edit</Button>
-                    </td>
-                    <td className="py-3 px-2 text-right">
-                      <Button variant="secondary" size="sm" onClick={() => handleSendResetEmail(u)}>Send Reset Email</Button>
-                    </td>
-                    <td className="py-3 px-2 pr-5 text-right">
-                      {isPending ? (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDelete(u)}
-                          title="User has not set up password. Click to delete."
-                        >
-                          Delete
-                        </Button>
-                      ) : (
-                        <Button
-                          variant={u.isActive ? 'destructive' : 'default'}
-                          size="sm"
-                          onClick={() => handleToggleActive(u)}
-                        >
-                          {u.isActive ? 'Deactivate' : 'Activate'}
-                        </Button>
-                      )}
+                    <td className="py-3.5 px-5">
+                      <div className="flex justify-end">
+                        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border/80 bg-white p-0.5 shadow-sm">
+                          <button
+                            type="button"
+                            title="Edit user"
+                            aria-label="Edit user"
+                            onClick={() => handleEditClick(u)}
+                            className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                          >
+                            <Pencil className="size-3.5" strokeWidth={1.75} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Send password reset email"
+                            aria-label="Send password reset email"
+                            onClick={() => handleSendResetEmail(u)}
+                            className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                          >
+                            <KeyRound className="size-3.5" strokeWidth={1.75} />
+                          </button>
+                          <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+                          {isPending ? (
+                            <button
+                              type="button"
+                              title="Delete pending user"
+                              aria-label="Delete pending user"
+                              onClick={() => handleDelete(u)}
+                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <Trash2 className="size-3.5" strokeWidth={1.75} />
+                            </button>
+                          ) : u.isActive ? (
+                            <button
+                              type="button"
+                              title="Deactivate user"
+                              aria-label="Deactivate user"
+                              onClick={() => handleToggleActive(u)}
+                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <UserX className="size-3.5" strokeWidth={1.75} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              title="Activate user"
+                              aria-label="Activate user"
+                              onClick={() => handleToggleActive(u)}
+                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+                            >
+                              <UserCheck className="size-3.5" strokeWidth={1.75} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 )
