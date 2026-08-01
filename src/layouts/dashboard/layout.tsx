@@ -1,25 +1,32 @@
-import type { ReactNode } from 'react'
- 
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { useAuthStore } from '@/stores/auth'
+import { 
+  LayoutDashboard, Users, Briefcase, Layers, Map, Clock, 
+  Package, Truck, FileText, Banknote, CreditCard, LineChart,
+  Menu, ChevronLeft, LogOut
+} from 'lucide-react'
 
 type NavItem = {
   label: string
   href: string
-  tone: string
+  icon: any
   adminOnly?: boolean
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/app', tone: 'bg-cyan-400' },
-  { label: 'Users', href: '/app/users', tone: 'bg-indigo-400', adminOnly: true },
-  { label: 'Clients', href: '/app/clients', tone: 'bg-emerald-400', adminOnly: true },
-  { label: 'Services', href: '/app/services', tone: 'bg-amber-400', adminOnly: true },
-  { label: 'Warehouse Locations', href: '/app/warehouse-locations', tone: 'bg-fuchsia-400', adminOnly: true },
-  { label: 'Attendance', href: '/app/attendance', tone: 'bg-violet-400' },
-  { label: 'Inventory', href: '/app/inventory', tone: 'bg-sky-400' },
-  { label: 'Shipments', href: '/app/shipments', tone: 'bg-pink-400' },
-  { label: 'Invoices & Billing', href: '/app/invoices', tone: 'bg-rose-400', adminOnly: true },
+  { label: 'Dashboard', href: '/app', icon: LayoutDashboard },
+  { label: 'Users', href: '/app/users', icon: Users, adminOnly: true },
+  { label: 'Clients', href: '/app/clients', icon: Briefcase, adminOnly: true },
+  { label: 'Services', href: '/app/services', icon: Layers, adminOnly: true },
+  { label: 'Warehouse Locations', href: '/app/warehouse-locations', icon: Map, adminOnly: true },
+  { label: 'Attendance', href: '/app/attendance', icon: Clock },
+  { label: 'Inventory', href: '/app/inventory', icon: Package },
+  { label: 'Shipments', href: '/app/shipments', icon: Truck },
+  { label: 'Invoices & Billing', href: '/app/invoices', icon: FileText, adminOnly: true },
+  { label: 'Payroll', href: '/app/payroll', icon: Banknote },
+  { label: 'Expenses', href: '/app/expenses', icon: CreditCard, adminOnly: true },
+  { label: 'Profit & Loss', href: '/app/profit-loss', icon: LineChart, adminOnly: true },
 ]
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -36,11 +43,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return isAdmin
   })
 
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const isActiveRoute = (href: string) => {
     if (href === '/app') {
       return pathname === '/app' || pathname === '/app/'
     }
-
     return pathname === href || pathname.startsWith(`${href}/`)
   }
 
@@ -63,76 +83,107 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     navigate('/auth/login', { replace: true })
   }
 
+  const userInitials = displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
+
   return (
     <div className="dashboard-shell min-h-screen flex">
-      <aside className="dashboard-sidebar hidden md:flex w-72 flex-col border-r border-sidebar-border/80 text-sidebar-foreground">
-        <div className="flex h-16 items-center justify-between gap-3 border-b border-sidebar-border/80 px-5 flex-shrink-0">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="dashboard-brand-mark">
+      {/* Sidebar */}
+      <aside className={`dashboard-sidebar hidden md:flex flex-col border-r border-sidebar-border/80 text-sidebar-foreground transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-72'}`}>
+        <div className="flex h-16 items-center justify-between border-b border-sidebar-border/80 px-4 flex-shrink-0">
+          <div className={`flex items-center gap-3 overflow-hidden ${isCollapsed ? 'justify-center w-full' : ''}`}>
+            <div className="dashboard-brand-mark shrink-0">
               <img src="/Logo.png" alt="ProPackers logo" className="h-8 w-8 object-contain" />
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold tracking-tight text-white">ProPackers UK</div>
-              <div className="text-[11px] uppercase tracking-[0.22em] text-sidebar-foreground/55">Warehouse Platform</div>
-            </div>
+            {!isCollapsed && (
+              <div className="min-w-0 shrink-0">
+                <div className="text-sm font-semibold tracking-tight text-white whitespace-nowrap">ProPackers UK</div>
+              </div>
+            )}
           </div>
+          {!isCollapsed && (
+            <button 
+              onClick={() => setIsCollapsed(true)}
+              className="shrink-0 p-1.5 rounded-lg hover:bg-white/10 text-sidebar-foreground/70 hover:text-white transition-colors"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          )}
         </div>
 
-        <div className="border-b border-sidebar-border/80 px-5 py-4">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-sidebar-foreground/45">Signed in as</div>
-          <div className="mt-1 truncate text-sm font-medium text-sidebar-foreground">{displayName}</div>
-          <div className="mt-3 inline-flex items-center rounded-full border border-sidebar-border/80 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-sidebar-foreground/70">
-            {isClient ? 'Client Portal' : 'Admin Console'}
+        {isCollapsed && (
+          <div className="flex justify-center pt-4">
+            <button 
+              onClick={() => setIsCollapsed(false)}
+              className="p-2 rounded-lg hover:bg-white/10 text-sidebar-foreground/70 hover:text-white transition-colors"
+            >
+              <Menu size={20} />
+            </button>
           </div>
-        </div>
+        )}
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <div className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-sidebar-foreground/35">Navigation</div>
-          <div className="space-y-1">
-            {visibleNavItems.map(({ label, href, tone }) => (
+        <nav className="flex-1 overflow-y-auto px-3 py-4 scrollbar-hide">
+          <div className="space-y-2">
+            {visibleNavItems.map(({ label, href, icon: Icon }) => (
               <Link
                 key={href}
                 to={href}
+                title={isCollapsed ? label : undefined}
                 aria-current={isActiveRoute(href) ? 'page' : undefined}
-                className={`dashboard-nav-item ${isActiveRoute(href) ? 'dashboard-nav-item--active' : 'dashboard-nav-item--idle'}`}
+                className={`flex items-center rounded-xl transition-colors duration-200 ${
+                  isCollapsed ? 'justify-center p-3' : 'gap-4 px-4 py-3'
+                } ${
+                  isActiveRoute(href) 
+                    ? 'bg-sidebar-primary text-white shadow-md' 
+                    : 'text-sidebar-foreground/70 hover:bg-white/10 hover:text-white'
+                }`}
               >
-                <span className={`h-2.5 w-2.5 rounded-full ${tone}`} />
-                <span>{label}</span>
+                <Icon size={22} className="shrink-0" />
+                {!isCollapsed && <span className="font-medium text-[15px] whitespace-nowrap">{label}</span>}
               </Link>
             ))}
           </div>
         </nav>
-
-        <div className="border-t border-sidebar-border/80 p-4">
-          <div className="rounded-2xl border border-white/8 bg-white/5 p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-200">
-                <span className="grid grid-cols-2 gap-0.5">
-                  <span className="h-1.5 w-1.5 rounded-sm bg-cyan-200" />
-                  <span className="h-1.5 w-1.5 rounded-sm bg-cyan-200" />
-                  <span className="h-1.5 w-1.5 rounded-sm bg-cyan-200" />
-                  <span className="h-1.5 w-1.5 rounded-sm bg-cyan-200" />
-                </span>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-white">Operational snapshot</div>
-                <div className="text-xs text-sidebar-foreground/55">Clean visibility across the warehouse.</div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="mt-4 flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-red-500/10 hover:text-red-200"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
       </aside>
 
-      <main className="dashboard-main flex-1">
-        <div className="dashboard-main__content relative z-10 p-4 md:p-6 lg:p-8">{children}</div>
-      </main>
+      <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
+        {/* Top Header */}
+        <header className="h-16 shrink-0 flex items-center justify-between px-6 bg-background/80 backdrop-blur-md border-b border-border sticky top-0 z-40">
+          <div className="flex-1"></div>
+          
+          {/* User Profile Dropdown */}
+          <div className="relative" ref={profileRef}>
+            <button 
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
+              className="flex items-center gap-2 hover:bg-muted/80 p-1 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-600 font-semibold text-sm uppercase border border-indigo-500/20 shadow-sm">
+                {userInitials}
+              </div>
+            </button>
+
+            {isProfileOpen && (
+              <div className="absolute right-0 mt-2 w-56 rounded-xl border border-border bg-card shadow-lg py-2 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                <div className="px-4 py-2 border-b border-border mb-1">
+                  <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{isClient ? 'Client Portal' : 'Admin / Staff'}</p>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2 transition-colors"
+                >
+                  <LogOut size={16} />
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="dashboard-main flex-1 relative overflow-y-auto">
+          <div className="dashboard-main__content relative z-10 p-4 md:p-6 lg:p-8">{children}</div>
+        </main>
+      </div>
     </div>
   )
 }

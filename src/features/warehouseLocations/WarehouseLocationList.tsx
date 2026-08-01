@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Maximize, Minimize } from 'lucide-react'
 import { warehouseLocations as api } from '@/api'
 import { Button, Input, Select } from '@/components/Shared Components'
 import WarehouseLocationFormModal from './WarehouseLocationFormModal'
+import WarehouseTree from './WarehouseTree'
 import type { WarehouseLocation, WarehouseLocationClass } from '@/api/warehouseLocations'
-
 
 type ClassDraft = {
   name: string
@@ -25,6 +26,9 @@ export default function WarehouseLocationList() {
   })
   const [classSaving, setClassSaving] = useState(false)
   const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState<'setup' | 'locations'>('setup')
+  const [viewMode, setViewMode] = useState<'tree' | 'table'>('tree')
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -140,19 +144,39 @@ export default function WarehouseLocationList() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl p-4 shadow">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-medium">Warehouse Setup Flow</h2>
-            <p className="text-sm text-slate-500 mt-1">Step 1: Create classes. Step 2: Create locations under those classes.</p>
+      {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+
+      <div className="flex border-b border-slate-200">
+        <button
+          className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${
+            activeTab === 'setup'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+          }`}
+          onClick={() => setActiveTab('setup')}
+        >
+          Warehouse Setup
+        </button>
+        <button
+          className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${
+            activeTab === 'locations'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+          }`}
+          onClick={() => setActiveTab('locations')}
+        >
+          Warehouse locations
+        </button>
+      </div>
+
+      {activeTab === 'setup' && (
+        <div className="bg-white rounded-xl p-4 shadow">
+          <div className="mb-4">
+            <h2 className="text-lg font-medium">Location Classes</h2>
+            <p className="text-sm text-slate-500 mt-1">Define the types of locations in your warehouse (e.g. Zone, Floor, Aisle, Shelf).</p>
           </div>
-        </div>
 
-        {error ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-
-        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-          <h3 className="text-base font-semibold mb-3">Step 1: Location Classes</h3>
-          <div className="grid gap-2 md:grid-cols-[1.2fr_1.5fr_1.2fr_auto_auto] md:items-center">
+          <div className="grid gap-2 md:grid-cols-[1.2fr_1.5fr_1.2fr_auto_auto] md:items-center bg-slate-50/60 p-4 rounded-xl border border-slate-200">
             <Input
               placeholder="Class name (e.g. Zone, Aisle, Shelf)"
               value={classDraft.name}
@@ -216,63 +240,112 @@ export default function WarehouseLocationList() {
                     </tr>
                   )
                 })}
+                {classes.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-slate-400">
+                      No location classes created yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
-      </div>
-
-      <div className="bg-white rounded-xl p-4 shadow">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-base font-semibold">Step 2: Warehouse Locations</h3>
-            <p className="text-sm text-slate-500 mt-1">Create physical locations and map each to a class and optional parent.</p>
-          </div>
-          <Button onClick={handleCreateClick} disabled={classes.length === 0}>New Location</Button>
-        </div>
-      <WarehouseLocationFormModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSave={handleSave}
-        initial={editing}
-        classes={classes}
-        locations={items}
-      />
-
-      {loading ? (
-        <div>Loading…</div>
-      ) : (
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="py-2">Location</th>
-              <th className="py-2">Class</th>
-              <th className="py-2">Parent</th>
-              <th className="py-2">Path</th>
-              <th className="py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((s) => (
-              <tr key={s.id} className="border-t">
-                <td className="py-2">{s.locationName ?? '—'}</td>
-                <td className="py-2">{s.locationClass?.name ?? '—'}</td>
-                <td className="py-2">{s.parentLocation?.locationName ?? '—'}</td>
-                <td className="py-2">{s.materializedPath ?? '—'}</td>
-                <td className="py-2">
-                  <Button variant="ghost" size="sm" onClick={() => handleEditClick(s)}>
-                    Edit
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(s)} className="ml-2">
-                    Delete
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
-      </div>
+
+      {activeTab === 'locations' && (
+        <div className="bg-white rounded-xl p-4 shadow flex flex-col min-h-[600px] h-[calc(100vh-200px)]">
+          <div className="flex items-center justify-between mb-4 shrink-0">
+            <div>
+              <h3 className="text-lg font-medium">Physical Locations Hierarchy</h3>
+              <p className="text-sm text-slate-500 mt-1">Interactive org-chart style view of your warehouse layout.</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => setViewMode(viewMode === 'table' ? 'tree' : 'table')}>
+                {viewMode === 'table' ? 'View as Tree' : 'View as Table'}
+              </Button>
+              <Button onClick={handleCreateClick} disabled={classes.length === 0}>New Location</Button>
+            </div>
+          </div>
+
+          <WarehouseLocationFormModal
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+            onSave={handleSave}
+            initial={editing}
+            classes={classes}
+            locations={items}
+          />
+
+          <div className={
+            viewMode === 'tree' 
+              ? isFullscreen 
+                ? 'fixed inset-0 z-[100] bg-slate-50 flex flex-col' 
+                : 'flex-1 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden relative'
+              : 'flex-1 overflow-hidden relative'
+          }>
+            {viewMode === 'tree' && (
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="absolute top-4 right-4 z-10 bg-white border border-slate-200 rounded p-2 shadow-sm text-slate-500 hover:text-slate-800"
+                title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+              >
+                {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+              </button>
+            )}
+
+            {loading ? (
+              <div className="absolute inset-0 flex items-center justify-center text-slate-400">Loading data...</div>
+            ) : viewMode === 'tree' ? (
+              <WarehouseTree
+                locations={items}
+                classes={classes}
+                onEdit={handleEditClick}
+                onDelete={handleDelete}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="py-2">Location</th>
+                      <th className="py-2">Class</th>
+                      <th className="py-2">Parent</th>
+                      <th className="py-2">Path</th>
+                      <th className="py-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((s) => (
+                      <tr key={s.id} className="border-t">
+                        <td className="py-2">{s.locationName ?? '—'}</td>
+                        <td className="py-2">{s.locationClass?.name ?? '—'}</td>
+                        <td className="py-2">{s.parentLocation?.locationName ?? '—'}</td>
+                        <td className="py-2 text-slate-500 text-sm">{s.materializedPath ?? '—'}</td>
+                        <td className="py-2">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditClick(s)}>
+                            Edit
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => handleDelete(s)} className="ml-2">
+                            Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {items.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          No locations found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

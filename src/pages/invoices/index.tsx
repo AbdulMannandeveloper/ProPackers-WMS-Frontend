@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth'
-import { invoices as invoicesApi, clients as clientsApi } from '@/api'
+import { invoices as invoicesApi, clients as clientsApi, clientServices as clientServicesApi } from '@/api'
 import type { MonthlyInvoice, InvoiceLineItem } from '@/api/invoices'
 import type { Client } from '@/api/types'
 import {
@@ -9,6 +9,7 @@ import {
   CardContent,
   Badge,
   Input,
+  Select,
   Modal,
 } from '@/components/Shared Components'
 
@@ -66,6 +67,8 @@ export default function InvoicesPage() {
   const [chargePrice, setChargePrice] = useState<number | ''>('')
   const [chargeDate, setChargeDate] = useState(new Date().toISOString().split('T')[0])
   const [chargeSaving, setChargeSaving] = useState(false)
+  const [clientServices, setClientServices] = useState<any[]>([])
+  const [selectedClientServiceId, setSelectedClientServiceId] = useState('')
 
   // ── Load ──
   const loadData = async () => {
@@ -134,6 +137,38 @@ export default function InvoicesPage() {
     }
   }
 
+  useEffect(() => {
+    if (manualChargeModalOpen && selectedInvoice?.clientId) {
+      const fetchClientServices = async () => {
+        try {
+          const res = await clientServicesApi.getClientServicesByClientId(selectedInvoice.clientId)
+          setClientServices(Array.isArray(res) ? res : [])
+        } catch {
+          setClientServices([])
+        }
+      }
+      void fetchClientServices()
+    } else {
+      setClientServices([])
+      setSelectedClientServiceId('')
+    }
+  }, [manualChargeModalOpen, selectedInvoice])
+
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value
+    setSelectedClientServiceId(val)
+    if (val === '') {
+      setChargeDescription('')
+      setChargePrice('')
+    } else {
+      const match = clientServices.find((cs) => cs.id === val)
+      if (match) {
+        setChargeDescription(`Provided service "${match.service?.description || 'Service'}"`)
+        setChargePrice(match.chargedPrice ? Number(match.chargedPrice) : '')
+      }
+    }
+  }
+
   const handleAddManualCharge = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedInvoice) return
@@ -154,6 +189,7 @@ export default function InvoicesPage() {
       setChargeDescription('')
       setChargeQty(1)
       setChargePrice('')
+      setSelectedClientServiceId('')
       // Reload so modal gets fresh line items
       const updated = await invoicesApi.getInvoiceById(selectedInvoice.id)
       setSelectedInvoice(updated)
@@ -506,6 +542,22 @@ export default function InvoicesPage() {
         }
       >
         <form id="manual-charge-form" onSubmit={handleAddManualCharge} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Select Provided Service (Optional)
+            </label>
+            <Select
+              value={selectedClientServiceId}
+              onChange={handleServiceChange}
+            >
+              <option value="">-- Custom Charge (Enter Manually) --</option>
+              {clientServices.map((cs) => (
+                <option key={cs.id} value={cs.id}>
+                  {cs.service?.description || 'Service'} (£{Number(cs.chargedPrice).toFixed(2)} / {cs.unit})
+                </option>
+              ))}
+            </Select>
+          </div>
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
               Description *

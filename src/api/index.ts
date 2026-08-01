@@ -12,6 +12,12 @@ import * as stock from './stock'
 import * as inventory from './inventory'
 import * as shipments from './shipments'
 import * as invoices from './invoices'
+import * as holidays from './holidays'
+import * as payroll from './payroll'
+import * as expenses from './expenses'
+import * as profitLoss from './profit-loss'
+import * as auditLogs from './audit-logs'
+import * as clientServices from './clientServices'
 
 export {
   auth,
@@ -28,6 +34,12 @@ export {
   inventory,
   shipments,
   invoices,
+  holidays,
+  payroll,
+  expenses,
+  profitLoss,
+  auditLogs,
+  clientServices,
 }
 
 export default {
@@ -45,4 +57,10 @@ export default {
   inventory,
   shipments,
   invoices,
+  holidays,
+  payroll,
+  expenses,
+  profitLoss,
+  auditLogs,
+  clientServices,
 }

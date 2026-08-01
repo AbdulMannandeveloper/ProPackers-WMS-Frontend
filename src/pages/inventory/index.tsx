@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useAuthStore } from '@/stores/auth'
 import {
   products as productsApi,
@@ -6,6 +6,7 @@ import {
   inventory as inventoryApi,
   clients as clientsApi,
   warehouseLocations as locationsApi,
+  auditLogs as auditLogsApi,
 } from '@/api'
 import type { Product } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
@@ -19,6 +20,9 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
+import JsBarcode from 'jsbarcode'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function InventoryPage() {
   const role = useAuthStore((s) => s.role)
@@ -26,7 +30,7 @@ export default function InventoryPage() {
   const isAdmin = role === 'admin'
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'products' | 'stock' | 'ledgers'>('products')
+  const [activeTab, setActiveTab] = useState<'products' | 'stock' | 'ledgers' | 'daily-checkout'>('products')
 
   // Global Data States
   const [products, setProducts] = useState<Product[]>([])
@@ -53,7 +57,17 @@ export default function InventoryPage() {
   // Modals Toggles
   const [productModalOpen, setProductModalOpen] = useState(false)
   const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [adjustStockOpen, setAdjustStockOpen] = useState(false)
+  const [auditLogs, setAuditLogs] = useState<any[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [ledgerDetailOpen, setLedgerDetailOpen] = useState(false)
+  const [selectedLedgerEntry, setSelectedLedgerEntry] = useState<InventoryLedgerEntry | null>(null)
+  const [clientContactOpen, setClientContactOpen] = useState(false)
+  const [selectedClientDetail, setSelectedClientDetail] = useState<any>(null)
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
+  const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null)
+  const barcodeRef = useRef<SVGSVGElement | null>(null)
 
   // Product Form State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -76,10 +90,29 @@ export default function InventoryPage() {
   const [adjustReferenceId, setAdjustReferenceId] = useState('')
   const [adjustNotes, setAdjustNotes] = useState('')
   const [adjustSaving, setAdjustSaving] = useState(false)
+  const [deactivateSaving, setDeactivateSaving] = useState(false)
 
-  // Search/Filters
+  // Search/Filters (Products tab)
   const [skuSearch, setSkuSearch] = useState('')
   const [productNameSearch, setProductNameSearch] = useState('')
+  const [hideDeactivated, setHideDeactivated] = useState(false)
+
+  // Stock tab filters (US-041)
+  const [stockClientFilter, setStockClientFilter] = useState('')
+  const [stockLocationFilter, setStockLocationFilter] = useState('')
+
+  // Ledger tab filters (US-058/059/060)
+  const [ledgerStartDate, setLedgerStartDate] = useState('')
+  const [ledgerEndDate, setLedgerEndDate] = useState('')
+  const [ledgerClientFilter, setLedgerClientFilter] = useState('')
+  const [ledgerMovementType, setLedgerMovementType] = useState('')
+  const [ledgerProductSearch, setLedgerProductSearch] = useState('')
+  const [ledgerFiltering, setLedgerFiltering] = useState(false)
+
+  // Daily Checkout tab (US-053/054)
+  const [dailyCheckoutDate, setDailyCheckoutDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [dailyCheckoutData, setDailyCheckoutData] = useState<any[]>([])
+  const [dailyCheckoutLoading, setDailyCheckoutLoading] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
@@ -137,6 +170,8 @@ export default function InventoryPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (productSaving) return
+    
     if (!clientId || !skuCode || !productName) {
       showToast('Client, SKU Code, and Product Name are required.', 'error')
       return
@@ -174,7 +209,8 @@ export default function InventoryPage() {
 
   // Deactivate Product Action
   const handleToggleDeactivate = async () => {
-    if (!selectedProduct) return
+    if (!selectedProduct || deactivateSaving) return
+    setDeactivateSaving(true)
     try {
       await productsApi.deactivateProduct(selectedProduct.id)
       showToast(
@@ -187,6 +223,25 @@ export default function InventoryPage() {
       await loadData()
     } catch (err: any) {
       showToast(err?.response?.data?.error || err?.message || 'Action failed.', 'error')
+    } finally {
+      setDeactivateSaving(false)
+    }
+  }
+
+  // Delete Product Action (US-099)
+  const handleDeleteProduct = async () => {
+    if (!selectedProduct || productSaving) return
+    setProductSaving(true)
+    try {
+      await productsApi.deleteProduct(selectedProduct.id)
+      showToast('Product has been deleted successfully.')
+      setDeleteConfirmOpen(false)
+      setSelectedProduct(null)
+      await loadData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Failed to delete product.', 'error')
+    } finally {
+      setProductSaving(false)
     }
   }
 
@@ -208,6 +263,8 @@ export default function InventoryPage() {
 
   const handleSaveStockAdjustment = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (adjustSaving) return
+    
     if (!currentUserId) {
       showToast('Session expired. Please log in again.', 'error')
       return
@@ -258,6 +315,206 @@ export default function InventoryPage() {
     }
   }
 
+  // US-058/059/060: Apply ledger filters
+  const handleApplyLedgerFilters = async () => {
+    setLedgerFiltering(true)
+    try {
+      const hasAnyFilter = ledgerStartDate || ledgerEndDate || ledgerClientFilter || ledgerMovementType || ledgerProductSearch
+      if (hasAnyFilter) {
+        // Find productId from search text
+        let productId: string | undefined
+        if (ledgerProductSearch) {
+          const match = products.find(
+            (p) =>
+              p.skuCode.toLowerCase().includes(ledgerProductSearch.toLowerCase()) ||
+              p.productName.toLowerCase().includes(ledgerProductSearch.toLowerCase())
+          )
+          productId = match?.id
+        }
+        const filtered = await inventoryApi.getLedgerWithFilters({
+          startDate: ledgerStartDate || undefined,
+          endDate: ledgerEndDate || undefined,
+          clientId: ledgerClientFilter || undefined,
+          movementType: ledgerMovementType || undefined,
+          productId,
+        })
+        setLedgers(Array.isArray(filtered) ? filtered : [])
+      } else {
+        const all = await inventoryApi.getAllInventoryLedgers()
+        setLedgers(Array.isArray(all) ? all : [])
+      }
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Failed to apply filters.', 'error')
+    } finally {
+      setLedgerFiltering(false)
+    }
+  }
+
+  const handleClearLedgerFilters = async () => {
+    setLedgerStartDate('')
+    setLedgerEndDate('')
+    setLedgerClientFilter('')
+    setLedgerMovementType('')
+    setLedgerProductSearch('')
+    setLedgerFiltering(true)
+    try {
+      const all = await inventoryApi.getAllInventoryLedgers()
+      setLedgers(Array.isArray(all) ? all : [])
+    } catch {
+      // ignore
+    } finally {
+      setLedgerFiltering(false)
+    }
+  }
+
+  // US-061/062: Generate PDF Report
+  const handleGenerateLedgerPDF = () => {
+    const sorted = [...ledgers].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    const doc = new jsPDF({ orientation: 'landscape' })
+
+    doc.setFontSize(18)
+    doc.setTextColor(15, 23, 42)
+    doc.text('ProPackers WMS — Inventory Ledger Report', 14, 20)
+
+    doc.setFontSize(10)
+    doc.setTextColor(100, 116, 139)
+    const filterSummary: string[] = []
+    if (ledgerStartDate) filterSummary.push(`From: ${ledgerStartDate}`)
+    if (ledgerEndDate) filterSummary.push(`To: ${ledgerEndDate}`)
+    if (ledgerMovementType) filterSummary.push(`Type: ${ledgerMovementType}`)
+    if (ledgerClientFilter) {
+      const cl = clients.find((c) => c.id === ledgerClientFilter)
+      filterSummary.push(`Client: ${cl?.companyName || ledgerClientFilter}`)
+    }
+    if (ledgerProductSearch) filterSummary.push(`Product: ${ledgerProductSearch}`)
+    doc.text(filterSummary.length > 0 ? `Filters: ${filterSummary.join(' | ')}` : 'Filters: None (showing all)', 14, 28)
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 34)
+
+    const tableData = sorted.map((l) => [
+      new Date(l.timestamp).toLocaleString(),
+      l.movementType,
+      l.product?.skuCode || '—',
+      l.product?.productName || '—',
+      String(l.quantity),
+      `${l.fromLocation?.locationName || 'Supplier'} → ${l.toLocation?.locationName || 'Dispatch'}`,
+      `${l.user?.firstName || ''} ${l.user?.lastName || ''}`.trim() || '—',
+    ])
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Timestamp', 'Type', 'SKU', 'Product', 'Qty', 'From → To', 'User']],
+      body: tableData,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [15, 118, 110] },
+    })
+
+    // US-062: Summary totals
+    const totalIn = sorted.filter((l) => l.movementType === 'CHECKIN').reduce((sum, l) => sum + l.quantity, 0)
+    const totalOut = sorted.filter((l) => l.movementType === 'CHECKOUT').reduce((sum, l) => sum + l.quantity, 0)
+    const totalMoves = sorted.filter((l) => l.movementType === 'INTERNAL_MOVE').reduce((sum, l) => sum + l.quantity, 0)
+    const finalY = (doc as any).lastAutoTable?.finalY || 60
+    doc.setFontSize(10)
+    doc.setTextColor(15, 23, 42)
+    doc.text(`Summary — Total Inbound: ${totalIn} units | Total Outbound: ${totalOut} units | Internal Moves: ${totalMoves} units`, 14, finalY + 10)
+
+    doc.save(`ProPackers_Ledger_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+    showToast('PDF report generated and downloaded.')
+  }
+
+  // US-053/054: Load daily checkout summary
+  const loadDailyCheckout = async (date: string) => {
+    setDailyCheckoutLoading(true)
+    try {
+      const data = await inventoryApi.getDailyCheckoutSummary(date)
+      setDailyCheckoutData(Array.isArray(data) ? data : [])
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Failed to load daily checkout data.', 'error')
+      setDailyCheckoutData([])
+    } finally {
+      setDailyCheckoutLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'daily-checkout') {
+      void loadDailyCheckout(dailyCheckoutDate)
+    }
+  }, [activeTab, dailyCheckoutDate])
+
+  // US-102: Load system audit logs
+  const loadAuditLogs = async () => {
+    setAuditLoading(true)
+    try {
+      const data = await auditLogsApi.getAllAuditLogs()
+      setAuditLogs(Array.isArray(data) ? data : [])
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Failed to load audit logs.', 'error')
+      setAuditLogs([])
+    } finally {
+      setAuditLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'audit-logs' && isAdmin) {
+      void loadAuditLogs()
+    }
+  }, [activeTab, isAdmin])
+
+  // US-038: Barcode generation
+  const handleOpenBarcode = (prod: Product) => {
+    setBarcodeProduct(prod)
+    setBarcodeModalOpen(true)
+  }
+
+  useEffect(() => {
+    if (barcodeModalOpen && barcodeProduct && barcodeRef.current) {
+      try {
+        JsBarcode(barcodeRef.current, barcodeProduct.barcode || barcodeProduct.skuCode, {
+          format: 'CODE128',
+          width: 2,
+          height: 80,
+          displayValue: true,
+          fontSize: 14,
+          margin: 10,
+        })
+      } catch {
+        // fallback if format fails
+      }
+    }
+  }, [barcodeModalOpen, barcodeProduct])
+
+  const handlePrintBarcode = () => {
+    if (!barcodeRef.current) return
+    const svgContent = barcodeRef.current.outerHTML
+    const printWindow = window.open('', '_blank', 'width=400,height=300')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head><title>Barcode — ${barcodeProduct?.skuCode}</title></head>
+          <body style="display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;">
+            <div style="text-align:center;">
+              <h3 style="font-family:monospace;margin-bottom:8px;">${barcodeProduct?.productName}</h3>
+              ${svgContent}
+            </div>
+          </body>
+        </html>
+      `)
+      printWindow.document.close()
+      printWindow.focus()
+      printWindow.print()
+    }
+  }
+
+  // US-040: Client contact modal
+  const handleOpenClientContact = (clientCompanyId: string) => {
+    const client = clients.find((c) => c.id === clientCompanyId)
+    if (client) {
+      setSelectedClientDetail(client)
+      setClientContactOpen(true)
+    }
+  }
+
   // Memoized KPIs
   const activeSKUsCount = useMemo(() => products.filter((p) => !p.isDeactivated).length, [products])
   
@@ -275,14 +532,33 @@ export default function InventoryPage() {
     [stockLevels]
   )
 
-  // Filtered Lists
+  // Filtered Lists (US-044: deactivated products toggle + sort)
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    let list = products.filter((p) => {
       const matchSku = p.skuCode.toLowerCase().includes(skuSearch.toLowerCase())
       const matchName = p.productName.toLowerCase().includes(productNameSearch.toLowerCase())
+      if (hideDeactivated && p.isDeactivated) return false
       return matchSku && matchName
     })
-  }, [products, skuSearch, productNameSearch])
+    // Sort: active first, deactivated last
+    list = list.sort((a, b) => {
+      if (a.isDeactivated === b.isDeactivated) return 0
+      return a.isDeactivated ? 1 : -1
+    })
+    return list
+  }, [products, skuSearch, productNameSearch, hideDeactivated])
+
+  // US-041: Stock table filters
+  const filteredStockLevels = useMemo(() => {
+    return stockLevels.filter((sl) => {
+      if (stockClientFilter) {
+        const prod = products.find((p) => p.id === sl.productId)
+        if (prod?.clientId !== stockClientFilter) return false
+      }
+      if (stockLocationFilter && sl.locationId !== stockLocationFilter) return false
+      return true
+    })
+  }, [stockLevels, stockClientFilter, stockLocationFilter, products])
 
   const formatWeight = (w?: any) => {
     if (w === undefined || w === null) return '—'
@@ -352,17 +628,19 @@ export default function InventoryPage() {
       </div>
 
       {/* Workspace Tabs */}
-      <div className="border-b border-slate-200 dark:border-slate-800 flex gap-6">
+      <div className="border-b border-slate-200 dark:border-slate-800 flex gap-6 overflow-x-auto">
         {[
           { id: 'products', label: 'SKU Products Catalog' },
           { id: 'stock', label: 'Stock Allocations' },
           { id: 'ledgers', label: 'Inventory Movement Ledger' },
+          { id: 'daily-checkout', label: 'Daily Checkout Summary' },
+          ...(isAdmin ? [{ id: 'audit-logs', label: 'System Audit Logs' }] : []),
         ].map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setActiveTab(t.id as any)}
-            className={`pb-3 text-sm font-semibold border-b-2 transition-all ${
+            className={`pb-3 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
               activeTab === t.id
                 ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -383,8 +661,8 @@ export default function InventoryPage() {
               {/* TAB 1: PRODUCT CATALOG */}
               {activeTab === 'products' && (
                 <div className="space-y-4">
-                  {/* Search filters */}
-                  <div className="flex flex-col sm:flex-row gap-4">
+                  {/* Search filters + US-044 toggle */}
+                  <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                     <Input
                       placeholder="Search by SKU code..."
                       value={skuSearch}
@@ -397,6 +675,15 @@ export default function InventoryPage() {
                       onChange={(e) => setProductNameSearch(e.target.value)}
                       className="max-w-xs"
                     />
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none ml-auto">
+                      <input
+                        type="checkbox"
+                        checked={hideDeactivated}
+                        onChange={(e) => setHideDeactivated(e.target.checked)}
+                        className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                      />
+                      Hide Deactivated
+                    </label>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -454,8 +741,15 @@ export default function InventoryPage() {
                                     )}
                                   </div>
                                 </td>
-                                <td className="py-4 font-medium text-slate-700 dark:text-slate-300">
-                                  {p.client?.companyName || '—'}
+                                {/* US-040: Clickable client name */}
+                                <td className="py-4">
+                                  <button
+                                    type="button"
+                                    className="font-medium text-slate-700 dark:text-slate-300 hover:text-cyan-600 hover:underline transition-colors cursor-pointer"
+                                    onClick={() => p.clientId && handleOpenClientContact(p.clientId)}
+                                  >
+                                    {p.client?.companyName || '—'}
+                                  </button>
                                 </td>
                                 <td className="py-4">
                                   <Badge variant={p.isDeactivated ? 'secondary' : 'default'}>
@@ -465,6 +759,14 @@ export default function InventoryPage() {
                                 {isAdmin && (
                                   <td className="py-4 text-right">
                                     <div className="flex justify-end gap-1.5">
+                                      {/* US-038: Barcode button */}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleOpenBarcode(p)}
+                                      >
+                                        Barcode
+                                      </Button>
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -482,6 +784,16 @@ export default function InventoryPage() {
                                       >
                                         {p.isDeactivated ? 'Reactivate' : 'Deactivate'}
                                       </Button>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() => {
+                                          setSelectedProduct(p)
+                                          setDeleteConfirmOpen(true)
+                                        }}
+                                      >
+                                        Delete
+                                      </Button>
                                     </div>
                                   </td>
                                 )}
@@ -495,9 +807,31 @@ export default function InventoryPage() {
                 </div>
               )}
 
-              {/* TAB 2: STOCK ALLOCATION */}
+              {/* TAB 2: STOCK ALLOCATION (US-041: filters) */}
               {activeTab === 'stock' && (
                 <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <Select
+                      value={stockClientFilter}
+                      onChange={(e) => setStockClientFilter(e.target.value)}
+                      className="max-w-xs"
+                    >
+                      <option value="">All Clients</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>{c.companyName}</option>
+                      ))}
+                    </Select>
+                    <Select
+                      value={stockLocationFilter}
+                      onChange={(e) => setStockLocationFilter(e.target.value)}
+                      className="max-w-xs"
+                    >
+                      <option value="">All Locations</option>
+                      {locations.map((loc) => (
+                        <option key={loc.id} value={loc.id}>{loc.locationName}</option>
+                      ))}
+                    </Select>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                       <thead>
@@ -511,14 +845,14 @@ export default function InventoryPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
-                        {stockLevels.length === 0 ? (
+                        {filteredStockLevels.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="py-8 text-center text-slate-400">
                               No stock allocations recorded. Adjust stock or check-in inventory.
                             </td>
                           </tr>
                         ) : (
-                          stockLevels.map((sl) => (
+                          filteredStockLevels.map((sl) => (
                             <tr key={sl.id}>
                               <td className="py-4">
                                 <span className="font-mono font-bold block text-slate-800 dark:text-slate-200">
@@ -555,9 +889,64 @@ export default function InventoryPage() {
                 </div>
               )}
 
-              {/* TAB 3: MOVEMENT LEDGER */}
+              {/* TAB 3: MOVEMENT LEDGER (US-057 to US-062) */}
               {activeTab === 'ledgers' && (
                 <div className="space-y-4">
+                  {/* Filter Controls */}
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">Ledger Filters</h3>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="secondary" onClick={handleClearLedgerFilters} disabled={ledgerFiltering}>
+                          Clear
+                        </Button>
+                        <Button size="sm" onClick={handleApplyLedgerFilters} disabled={ledgerFiltering}>
+                          {ledgerFiltering ? 'Filtering...' : 'Apply Filters'}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Start Date</label>
+                        <Input type="date" value={ledgerStartDate} onChange={(e) => setLedgerStartDate(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">End Date</label>
+                        <Input type="date" value={ledgerEndDate} onChange={(e) => setLedgerEndDate(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Client</label>
+                        <Select value={ledgerClientFilter} onChange={(e) => setLedgerClientFilter(e.target.value)}>
+                          <option value="">All Clients</option>
+                          {clients.map((c) => (
+                            <option key={c.id} value={c.id}>{c.companyName}</option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Movement Type</label>
+                        <Select value={ledgerMovementType} onChange={(e) => setLedgerMovementType(e.target.value)}>
+                          <option value="">All Types</option>
+                          <option value="CHECKIN">CHECKIN (Inbound)</option>
+                          <option value="CHECKOUT">CHECKOUT (Outbound)</option>
+                          <option value="INTERNAL_MOVE">INTERNAL_MOVE</option>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Product Name / SKU</label>
+                        <Input placeholder="Search product..." value={ledgerProductSearch} onChange={(e) => setLedgerProductSearch(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* PDF Generate Button (US-061) */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-500">{ledgers.length} entries shown</span>
+                    <Button variant="secondary" size="sm" onClick={handleGenerateLedgerPDF} disabled={ledgers.length === 0}>
+                      Generate PDF Report
+                    </Button>
+                  </div>
+
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                       <thead>
@@ -582,7 +971,14 @@ export default function InventoryPage() {
                           [...ledgers]
                             .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
                             .map((l) => (
-                              <tr key={l.id}>
+                              <tr
+                                key={l.id}
+                                className="cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-900/50 transition-colors"
+                                onClick={() => {
+                                  setSelectedLedgerEntry(l)
+                                  setLedgerDetailOpen(true)
+                                }}
+                              >
                                 <td className="py-4 text-xs font-mono text-slate-500">
                                   {new Date(l.timestamp).toLocaleString()}
                                 </td>
@@ -625,6 +1021,150 @@ export default function InventoryPage() {
                                 </td>
                               </tr>
                             ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: DAILY CHECKOUT SUMMARY (US-053/054) */}
+              {activeTab === 'daily-checkout' && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date</label>
+                      <Input
+                        type="date"
+                        value={dailyCheckoutDate}
+                        onChange={(e) => setDailyCheckoutDate(e.target.value)}
+                        className="max-w-xs"
+                      />
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={() => loadDailyCheckout(dailyCheckoutDate)} className="mt-4 sm:mt-0">
+                      Refresh
+                    </Button>
+                  </div>
+
+                  {dailyCheckoutLoading ? (
+                    <div className="py-8 text-center text-slate-500">Loading daily checkout data...</div>
+                  ) : dailyCheckoutData.length === 0 ? (
+                    <div className="py-8 text-center text-slate-400">
+                      No checkout transactions found for {new Date(dailyCheckoutDate).toLocaleDateString('en-GB', { dateStyle: 'long' })}.
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {dailyCheckoutData.map((group: any, idx: number) => {
+                        const items = Array.isArray(group.items) ? group.items : []
+                        const totalQty = items.reduce((sum: number, it: any) => sum + (it.quantity || 0), 0)
+                        return (
+                          <div key={idx} className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                            <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-3 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                  {group.clientName || group.clientId || 'Unknown Client'}
+                                </span>
+                                <Badge variant="secondary">{items.length} items</Badge>
+                              </div>
+                              <span className="text-sm font-bold text-rose-600">{totalQty} units checked out</span>
+                            </div>
+                            <table className="w-full text-left text-sm">
+                              <thead>
+                                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
+                                  <th className="px-4 pb-2 pt-3 font-semibold">Product SKU</th>
+                                  <th className="px-4 pb-2 pt-3 font-semibold">Product Name</th>
+                                  <th className="px-4 pb-2 pt-3 font-semibold text-center">Quantity</th>
+                                  <th className="px-4 pb-2 pt-3 font-semibold">Checked Out By</th>
+                                  <th className="px-4 pb-2 pt-3 font-semibold text-right">Time</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
+                                {items.map((it: any, iIdx: number) => (
+                                  <tr key={iIdx}>
+                                    <td className="px-4 py-3 font-mono font-bold text-slate-800 dark:text-slate-200">{it.skuCode || '—'}</td>
+                                    <td className="px-4 py-3">{it.productName || '—'}</td>
+                                    <td className="px-4 py-3 text-center font-bold">{it.quantity} units</td>
+                                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                                      {it.userName || '—'}
+                                    </td>
+                                    <td className="px-4 py-3 text-right text-xs font-mono text-slate-500">
+                                      {it.timestamp ? new Date(it.timestamp).toLocaleTimeString() : '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 5: SYSTEM AUDIT LOGS (US-102) */}
+              {activeTab === 'audit-logs' && isAdmin && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-500">{auditLogs.length} audit trail entries</span>
+                    <Button variant="secondary" size="sm" onClick={loadAuditLogs} disabled={auditLoading}>
+                      {auditLoading ? 'Refreshing...' : 'Refresh Logs'}
+                    </Button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-600 dark:text-slate-400">
+                      <thead>
+                        <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
+                          <th className="pb-3 font-semibold">Timestamp</th>
+                          <th className="pb-3 font-semibold">Action</th>
+                          <th className="pb-3 font-semibold">User</th>
+                          <th className="pb-3 font-semibold">Activity Details</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
+                        {auditLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-400">
+                              No manual edits or deletions recorded.
+                            </td>
+                          </tr>
+                        ) : (
+                          auditLogs.map((log) => {
+                            let parsed = {}
+                            try {
+                              parsed = JSON.parse(log.details)
+                            } catch {
+                              parsed = { raw: log.details }
+                            }
+                            return (
+                              <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/10">
+                                <td className="py-4 text-xs font-mono text-slate-500">
+                                  {new Date(log.timestamp).toLocaleString()}
+                                </td>
+                                <td className="py-4">
+                                  <Badge
+                                    variant={
+                                      log.action === 'DELETE_PRODUCT'
+                                        ? 'destructive'
+                                        : log.action === 'CREATE_PRODUCT'
+                                          ? 'default'
+                                          : 'secondary'
+                                    }
+                                  >
+                                    {log.action}
+                                  </Badge>
+                                </td>
+                                <td className="py-4 text-xs">
+                                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                    {log.user ? `${log.user.firstName} ${log.user.lastName}` : 'System Admin'}
+                                  </div>
+                                </td>
+                                <td className="py-4 text-xs font-mono max-w-md truncate">
+                                  {JSON.stringify(parsed)}
+                                </td>
+                              </tr>
+                            )
+                          })
                         )}
                       </tbody>
                     </table>
@@ -758,8 +1298,9 @@ export default function InventoryPage() {
             <Button
               variant={selectedProduct?.isDeactivated ? 'default' : 'destructive'}
               onClick={handleToggleDeactivate}
+              disabled={deactivateSaving}
             >
-              Confirm Action
+              {deactivateSaving ? 'Processing...' : 'Confirm Action'}
             </Button>
           </div>
         }
@@ -902,6 +1443,166 @@ export default function InventoryPage() {
             />
           </div>
         </form>
+      </Modal>
+
+      {/* ────────────────────────────────── MODAL: LEDGER ENTRY DETAIL (US-057) ────────────────────────────────── */}
+      <Modal
+        open={ledgerDetailOpen}
+        onClose={() => setLedgerDetailOpen(false)}
+        title="Inventory Movement Details"
+        description="Full audit trail for this ledger transaction."
+        size="md"
+      >
+        {selectedLedgerEntry && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Movement Type</span>
+                <Badge
+                  variant={
+                    selectedLedgerEntry.movementType === 'CHECKIN'
+                      ? 'default'
+                      : selectedLedgerEntry.movementType === 'CHECKOUT'
+                        ? 'destructive'
+                        : 'secondary'
+                  }
+                  className="mt-1"
+                >
+                  {selectedLedgerEntry.movementType}
+                </Badge>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Timestamp</span>
+                <strong className="text-slate-700 dark:text-slate-200">{new Date(selectedLedgerEntry.timestamp).toLocaleString()}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Product</span>
+                <strong className="text-slate-700 dark:text-slate-200">{selectedLedgerEntry.product?.skuCode}</strong>
+                <span className="block text-xs text-slate-500">{selectedLedgerEntry.product?.productName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Quantity</span>
+                <strong className="text-slate-700 dark:text-slate-200">{selectedLedgerEntry.quantity} units</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">From Location</span>
+                <strong className="text-slate-700 dark:text-slate-200">{selectedLedgerEntry.fromLocation?.locationName || 'External (Supplier)'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">To Location</span>
+                <strong className="text-slate-700 dark:text-slate-200">{selectedLedgerEntry.toLocation?.locationName || 'External (Dispatch)'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Performed By</span>
+                <strong className="text-slate-700 dark:text-slate-200">{selectedLedgerEntry.user?.firstName} {selectedLedgerEntry.user?.lastName}</strong>
+                <span className="block text-xs text-slate-500">{selectedLedgerEntry.user?.email}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Client</span>
+                <strong className="text-slate-700 dark:text-slate-200">
+                  {(() => {
+                    const prod = products.find((p) => p.id === selectedLedgerEntry.productId)
+                    const client = clients.find((c) => c.id === prod?.clientId)
+                    return client?.companyName || '—'
+                  })()}
+                </strong>
+              </div>
+            </div>
+            {(selectedLedgerEntry.referenceId || selectedLedgerEntry.notes) && (
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                {selectedLedgerEntry.referenceId && (
+                  <p className="text-sm"><span className="font-semibold text-slate-500">Reference:</span> <span className="font-mono text-cyan-600">{selectedLedgerEntry.referenceId}</span></p>
+                )}
+                {selectedLedgerEntry.notes && (
+                  <p className="text-sm mt-1"><span className="font-semibold text-slate-500">Notes:</span> {selectedLedgerEntry.notes}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ────────────────────────────────── MODAL: CLIENT CONTACT (US-040) ────────────────────────────────── */}
+      <Modal
+        open={clientContactOpen}
+        onClose={() => setClientContactOpen(false)}
+        title="Client Contact Details"
+        description="Business contact information for this client account."
+        size="sm"
+      >
+        {selectedClientDetail && (
+          <div className="space-y-3 text-sm">
+            <div>
+              <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Company Name</span>
+              <strong className="text-slate-800 dark:text-slate-200">{selectedClientDetail.companyName || '—'}</strong>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Contact Name</span>
+              <strong className="text-slate-800 dark:text-slate-200">{selectedClientDetail.contactName || '—'}</strong>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Email</span>
+              <strong className="text-slate-800 dark:text-slate-200">{selectedClientDetail.email || '—'}</strong>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Phone</span>
+              <strong className="text-slate-800 dark:text-slate-200">{selectedClientDetail.mobile || '—'}</strong>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Address</span>
+              <strong className="text-slate-800 dark:text-slate-200">{selectedClientDetail.address || '—'}</strong>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ────────────────────────────────── MODAL: BARCODE (US-038) ────────────────────────────────── */}
+      <Modal
+        open={barcodeModalOpen}
+        onClose={() => setBarcodeModalOpen(false)}
+        title="Product Barcode"
+        description={`Barcode label for ${barcodeProduct?.skuCode || 'product'}`}
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setBarcodeModalOpen(false)}>Close</Button>
+            <Button onClick={handlePrintBarcode}>Print Barcode</Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col items-center py-4">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">{barcodeProduct?.productName}</p>
+          <svg ref={barcodeRef} />
+        </div>
+      </Modal>
+
+      {/* ────────────────────────────────── MODAL: DELETE PRODUCT CONFIRM (US-099) ────────────────────────────────── */}
+      <Modal
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        title="Delete SKU Product"
+        description="Permanently delete this product from the inventory ledger."
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)} disabled={productSaving}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteProduct} disabled={productSaving}>
+              {productSaving ? 'Deleting...' : 'Delete Product'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Are you sure you want to permanently delete{' '}
+            <span className="font-semibold text-slate-900 dark:text-white">{selectedProduct?.productName}</span> (SKU:{' '}
+            <span className="font-mono">{selectedProduct?.skuCode}</span>)?
+          </p>
+          <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 p-3 rounded-xl">
+            <strong>Warning:</strong> This action cannot be undone. It will remove the product registration. If there
+            are active ledger entries or physical stock, the database will restrict this delete to maintain system integrity.
+          </p>
+        </div>
       </Modal>
     </div>
   )

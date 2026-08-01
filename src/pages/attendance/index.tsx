@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth'
-import { attendance as api, users as usersApi, shifts as shiftsApi } from '@/api'
+import { attendance as api, users as usersApi, shifts as shiftsApi, holidays as holidaysApi } from '@/api'
 import type { AttendanceLog } from '@/api/attendance'
+import type { Holiday } from '@/api/holidays'
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Badge, Input, Select, Modal } from '@/components/Shared Components'
 
 export default function AttendancePage() {
@@ -15,6 +16,16 @@ export default function AttendancePage() {
   const [logs, setLogs] = useState<AttendanceLog[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Toast State
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ message, type })
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [toast])
 
   // Admin Specific State
   const [users, setUsers] = useState<any[]>([])
@@ -30,6 +41,21 @@ export default function AttendancePage() {
   const [shiftStartTime, setShiftStartTime] = useState('08:00')
   const [shiftEndTime, setShiftEndTime] = useState('17:00')
 
+  // Holiday State (US-067)
+  const [holidays, setHolidays] = useState<Holiday[]>([])
+  const [showHolidays, setShowHolidays] = useState(false)
+  const [holidayName, setHolidayName] = useState('')
+  const [holidayStartDate, setHolidayStartDate] = useState('')
+  const [holidayEndDate, setHolidayEndDate] = useState('')
+  const [holidaySaving, setHolidaySaving] = useState(false)
+
+  // Archive State (US-068/069)
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+
+  // Delete Confirm State
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteLogId, setDeleteLogId] = useState<string | null>(null)
 
   // Edit Form Fields
   const [editLogin, setEditLogin] = useState('')
@@ -46,13 +72,15 @@ export default function AttendancePage() {
     setError('')
     try {
       if (isAdmin) {
-        const [logsData, usersData, shiftsData] = await Promise.all([
+        const [logsData, usersData, shiftsData, holidaysData] = await Promise.all([
           api.getAllAttendanceLogs(),
           usersApi.getAllUsers(),
           shiftsApi.getAllShifts(),
+          holidaysApi.getAllHolidays().catch(() => []),
         ])
         setLogs(logsData)
         setUsers((usersData as any[]).filter((u: any) => u.role === 'employee' || u.role === 'admin'))
+        setHolidays(Array.isArray(holidaysData) ? holidaysData : [])
         
         const defShift = shiftsData.find((s) => s.name === 'default')
         if (defShift) {
@@ -95,7 +123,7 @@ export default function AttendancePage() {
           gracePeriodMins: graceMinutes,
         })
         setDefaultShift(updated)
-        alert('Shift settings updated successfully.')
+        showToast('Shift settings updated successfully.')
       } else {
         const created = await shiftsApi.createShift({
           name: 'default',
@@ -104,11 +132,11 @@ export default function AttendancePage() {
           gracePeriodMins: graceMinutes,
         })
         setDefaultShift(created)
-        alert('Default shift settings initialized successfully.')
+        showToast('Default shift settings initialized successfully.')
       }
       setShowSettings(false)
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to save shift settings.')
+      showToast(e?.response?.data?.error || e?.message || 'Failed to save shift settings.', 'error')
     } finally {
       setShiftSaving(false)
     }
@@ -117,6 +145,32 @@ export default function AttendancePage() {
   useEffect(() => {
     void loadData()
   }, [isAdmin, currentUserId])
+
+  // Auto-logout: update logout timestamp when user navigates away or closes tab
+  // This ensures the last logout of the day is captured
+  useEffect(() => {
+    if (!currentUserId) return
+
+    const handleAutoLogout = async () => {
+      try {
+        const todayStr = new Date().toISOString().split('T')[0]
+        const userLogs = await api.getAttendanceLogByField('userId', currentUserId)
+        const todayLog = Array.isArray(userLogs)
+          ? userLogs.find((l) => l.date && l.date.split('T')[0] === todayStr)
+          : null
+
+        if (todayLog) {
+          // Update logout timestamp on every logout (last logout = checkout time)
+          await api.updateLogoutTimestamp(todayLog.id, new Date().toISOString())
+        }
+      } catch {
+        // Silent fail — don't block navigation
+      }
+    }
+
+    window.addEventListener('beforeunload', handleAutoLogout)
+    return () => window.removeEventListener('beforeunload', handleAutoLogout)
+  }, [currentUserId])
 
   // Clock In Action
   const handleClockIn = async () => {
@@ -140,7 +194,7 @@ export default function AttendancePage() {
     }
   }
 
-  // Clock Out Action
+  // Clock Out Action — updates logout so last logout = checkout time
   const handleClockOut = async (todayLogId: string) => {
     setClocking(true)
     setError('')
@@ -156,13 +210,16 @@ export default function AttendancePage() {
   }
 
   // Admin Actions
-  const handleDeleteLog = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this log?')) return
+  const handleDeleteLog = async () => {
+    if (!deleteLogId) return
     try {
-      await api.deleteAttendanceLog(id)
+      await api.deleteAttendanceLog(deleteLogId)
+      setDeleteConfirmOpen(false)
+      setDeleteLogId(null)
+      showToast('Attendance log deleted.')
       await loadData()
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to delete log')
+      showToast(e?.response?.data?.error || e?.message || 'Failed to delete log', 'error')
     }
   }
 
@@ -188,11 +245,62 @@ export default function AttendancePage() {
       })
       setModalOpen(false)
       setEditingLog(null)
+      showToast('Attendance log updated successfully.')
       await loadData()
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to update attendance log')
+      showToast(e?.response?.data?.error || e?.message || 'Failed to update attendance log', 'error')
     } finally {
       setEditLoading(false)
+    }
+  }
+
+  // US-067: Holiday CRUD
+  const handleAddHoliday = async () => {
+    if (!holidayName || !holidayStartDate) {
+      showToast('Holiday name and start date are required.', 'error')
+      return
+    }
+    setHolidaySaving(true)
+    try {
+      await holidaysApi.createHoliday({
+        name: holidayName,
+        startDate: `${holidayStartDate}T00:00:00.000Z`,
+        endDate: holidayEndDate ? `${holidayEndDate}T00:00:00.000Z` : undefined,
+      })
+      setHolidayName('')
+      setHolidayStartDate('')
+      setHolidayEndDate('')
+      showToast('Holiday added.')
+      await loadData()
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || e?.message || 'Failed to add holiday.', 'error')
+    } finally {
+      setHolidaySaving(false)
+    }
+  }
+
+  const handleDeleteHoliday = async (id: string) => {
+    try {
+      await holidaysApi.deleteHoliday(id)
+      showToast('Holiday deleted.')
+      await loadData()
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || e?.message || 'Failed to delete holiday.', 'error')
+    }
+  }
+
+  // US-068/069: Archive
+  const handleArchiveAndCleanup = async () => {
+    setArchiving(true)
+    try {
+      const result = await api.archiveAndCleanup()
+      setArchiveConfirmOpen(false)
+      showToast(result?.message || 'Archive completed successfully.')
+      await loadData()
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || e?.message || 'Archive failed.', 'error')
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -236,7 +344,22 @@ export default function AttendancePage() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto relative">
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-[100] rounded-2xl border p-4 shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/90 dark:border-emerald-800 dark:text-emerald-100'
+              : 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/90 dark:border-rose-800 dark:text-rose-100'
+          }`}
+        >
+          <div className={`w-2 h-2 rounded-full ${toast.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+          <span className="text-sm font-medium">{toast.message}</span>
+          <button type="button" onClick={() => setToast(null)} className="ml-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-base">×</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -295,9 +418,10 @@ export default function AttendancePage() {
                   <h3 className="font-semibold text-lg text-indigo-700">Shift Completed</h3>
                   <p className="text-xs text-slate-500 mt-1">In: {formatTime(todayLog.loginTimestamp)} | Out: {formatTime(todayLog.logoutTimestamp)}</p>
                   <p className="text-xs text-slate-400 mt-1 mb-6">Total duration: {calculateHours(todayLog.loginTimestamp, todayLog.logoutTimestamp)}</p>
-                  <Button disabled className="w-full bg-slate-100 text-slate-400 border border-slate-200">
-                    Done for Today
+                  <Button variant="destructive" onClick={() => handleClockOut(todayLog.id)} disabled={clocking} className="w-full">
+                    {clocking ? 'Logging...' : 'Clock Out Again'}
                   </Button>
+                  <p className="text-[10px] text-slate-400 mt-2">Each clock out updates your checkout time.</p>
                 </>
               )}
             </CardContent>
@@ -352,11 +476,19 @@ export default function AttendancePage() {
       {isAdmin && (
         <>
           {/* Shift control and Settings */}
-          <div className="flex justify-between items-center mb-1">
+          <div className="flex justify-between items-center mb-1 flex-wrap gap-2">
             <h2 className="text-lg font-medium text-slate-900 dark:text-white">Operations Control</h2>
-            <Button variant="secondary" onClick={() => setShowSettings(!showSettings)}>
-              {showSettings ? 'Hide Shift Settings' : 'Shift Settings'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => setShowHolidays(!showHolidays)}>
+                {showHolidays ? 'Hide Holidays' : 'Holiday Calendar'}
+              </Button>
+              <Button variant="secondary" onClick={() => setShowSettings(!showSettings)}>
+                {showSettings ? 'Hide Shift Settings' : 'Shift Settings'}
+              </Button>
+              <Button variant="destructive" onClick={() => setArchiveConfirmOpen(true)}>
+                Archive & Cleanup
+              </Button>
+            </div>
           </div>
 
           {showSettings && (
@@ -398,6 +530,83 @@ export default function AttendancePage() {
                 <Button onClick={handleSaveShiftSettings} disabled={shiftSaving}>
                   {shiftSaving ? 'Saving...' : 'Save Settings'}
                 </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* US-067: Holiday Calendar Section */}
+          {showHolidays && (
+            <Card className="shadow-md border-slate-200 p-4 mb-4">
+              <CardHeader className="p-0 pb-3">
+                <CardTitle className="text-base">Holiday Calendar</CardTitle>
+                <CardDescription>Manage official holidays. Attendance on these days can be cross-referenced.</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0 space-y-4">
+                {/* Add Holiday Form */}
+                <div className="flex flex-col sm:flex-row gap-3 items-end">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Holiday Name *</label>
+                    <Input
+                      placeholder="e.g. Christmas Day"
+                      value={holidayName}
+                      onChange={(e) => setHolidayName(e.target.value)}
+                      className="w-48"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Start Date *</label>
+                    <Input
+                      type="date"
+                      value={holidayStartDate}
+                      onChange={(e) => setHolidayStartDate(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">End Date</label>
+                    <Input
+                      type="date"
+                      value={holidayEndDate}
+                      onChange={(e) => setHolidayEndDate(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                  <Button onClick={handleAddHoliday} disabled={holidaySaving}>
+                    {holidaySaving ? 'Adding...' : 'Add Holiday'}
+                  </Button>
+                </div>
+
+                {/* Holiday List */}
+                {holidays.length === 0 ? (
+                  <div className="py-4 text-center text-sm text-slate-400">No holidays configured.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-slate-500">
+                          <th className="pb-2 font-medium">Name</th>
+                          <th className="pb-2 font-medium">Start Date</th>
+                          <th className="pb-2 font-medium">End Date</th>
+                          <th className="pb-2 font-medium text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {holidays.map((h) => (
+                          <tr key={h.id}>
+                            <td className="py-2 font-medium">{h.name}</td>
+                            <td className="py-2">{new Date(h.startDate).toLocaleDateString()}</td>
+                            <td className="py-2">{h.endDate ? new Date(h.endDate).toLocaleDateString() : '—'}</td>
+                            <td className="py-2 text-right">
+                              <Button variant="destructive" size="sm" onClick={() => handleDeleteHoliday(h.id)}>
+                                Delete
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -486,7 +695,15 @@ export default function AttendancePage() {
                                 <Button variant="ghost" size="sm" onClick={() => handleEditClick(record)}>
                                   Edit
                                 </Button>
-                                <Button variant="destructive" size="sm" onClick={() => handleDeleteLog(record.id)} className="ml-2">
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => {
+                                    setDeleteLogId(record.id)
+                                    setDeleteConfirmOpen(true)
+                                  }}
+                                  className="ml-2"
+                                >
                                   Delete
                                 </Button>
                               </>
@@ -541,6 +758,49 @@ export default function AttendancePage() {
             </Select>
           </div>
         </form>
+      </Modal>
+
+      {/* ─────────────────────────────── DELETE CONFIRM MODAL ─────────────────────────────── */}
+      <Modal
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        title="Delete Attendance Log"
+        description="This action cannot be undone."
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteLog}>Delete</Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-slate-600">Are you sure you want to permanently delete this attendance record?</p>
+      </Modal>
+
+      {/* ─────────────────────────────── ARCHIVE CONFIRM MODAL (US-068/069) ─────────────────────────────── */}
+      <Modal
+        open={archiveConfirmOpen}
+        onClose={() => setArchiveConfirmOpen(false)}
+        title="Archive & Cleanup Old Logs"
+        description="This will archive monthly summaries and permanently delete daily logs older than 2 months."
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setArchiveConfirmOpen(false)} disabled={archiving}>Cancel</Button>
+            <Button variant="destructive" onClick={handleArchiveAndCleanup} disabled={archiving}>
+              {archiving ? 'Archiving...' : 'Confirm Archive & Cleanup'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2 text-sm text-slate-600">
+          <p>This operation will:</p>
+          <ul className="list-disc pl-4 space-y-1">
+            <li>Compute and save monthly attendance summaries for all employees</li>
+            <li>Permanently delete detailed daily logs older than 2 months</li>
+          </ul>
+          <p className="text-rose-600 font-medium mt-3">⚠ This action cannot be undone.</p>
+        </div>
       </Modal>
     </div>
   )

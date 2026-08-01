@@ -43,6 +43,9 @@ export const updateLogoutTimestamp = (id: string, logoutTimestamp: string) =>
 export const deleteAttendanceLog = (id: string) =>
   httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
 
+export const archiveAndCleanup = (): Promise<{ message: string; processed: any[] }> =>
+  httpClient({ method: 'POST', url: `${BASE}/archive-and-cleanup` })
+
 export default {
   createAttendanceLog,
   getAllAttendanceLogs,
@@ -50,4 +53,5 @@ export default {
   updateAttendanceLog,
   updateLogoutTimestamp,
   deleteAttendanceLog,
+  archiveAndCleanup,
 }

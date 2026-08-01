@@ -95,6 +95,10 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
     if (selectedService?.unit) {
       setNewUnit(selectedService.unit)
     }
+    // Auto-fill with ideaPrice as suggested default
+    if (selectedService?.ideaPrice != null) {
+      setNewPrice(String(selectedService.ideaPrice))
+    }
   }
 
   const handleAdd = async () => {
@@ -152,7 +156,12 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
               <tbody>
                 {items.map((it) => (
                   <tr key={it.id} className="border-t">
-                      <td className="py-2 pr-3 font-medium text-slate-900">{it.service?.description ?? it.serviceId}</td>
+                      <td className="py-2 pr-3 font-medium text-slate-900">
+                        {it.service?.description ?? it.serviceId}
+                        {it.service?.ideaPrice != null && (
+                          <span className="block text-[10px] text-slate-400 font-normal">Idea price: £{Number(it.service.ideaPrice).toFixed(2)}</span>
+                        )}
+                      </td>
                       <td className="py-2">
                         <Input
                           type="number"

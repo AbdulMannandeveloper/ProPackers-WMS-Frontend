@@ -54,6 +54,9 @@ export const updateProduct = (id: string, payload: {
 export const deactivateProduct = (id: string): Promise<{ message: string }> =>
   httpClient({ method: 'PATCH', url: `${BASE}/${id}` })
 
+export const deleteProduct = (id: string): Promise<any> =>
+  httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
+
 export const getProductAndStockLevelById = (id: string): Promise<any> =>
   httpClient({ method: 'GET', url: `${BASE}/${id}/stock` })
 
@@ -64,5 +67,6 @@ export default {
   createProduct,
   updateProduct,
   deactivateProduct,
+  deleteProduct,
   getProductAndStockLevelById,
 }
