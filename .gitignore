@@ -19,7 +19,7 @@ coverage
 # Environment files
 .env
 .env.*
-.env.example
+!.env.example
 
 # Local config files
 *.local
@@ -36,5 +36,3 @@ coverage
 *.njsproj
 *.sln
 *.sw?
-
-package-lock.json

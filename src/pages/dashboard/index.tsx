@@ -1,4 +1,7 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
+import { holidays as holidaysApi } from '@/api'
+import type { Holiday } from '@/api/holidays'
 
 const kpis = [
   { label: 'Inbound orders', value: '128', delta: '+18%', tone: 'bg-blue-50', accent: 'bg-blue-500' },
@@ -7,19 +10,60 @@ const kpis = [
   { label: 'Tracked SKUs', value: '2.4k', delta: '+6% this week', tone: 'bg-violet-50', accent: 'bg-violet-500' },
 ]
 
-const activity = [
-  { title: 'Shipment checked in', detail: 'Receiving bay updated with 840 units from FashionForward.', time: '12 min ago' },
-  { title: 'Zone A rebalanced', detail: 'Fast movers shifted closer to outbound staging.', time: '46 min ago' },
-  { title: 'Client allocation confirmed', detail: 'GreenLeaf Health inventory reserved for dispatch.', time: '2 hr ago' },
-]
-
 const zones = [
   { label: 'Zone A - Fast movers', pct: 82, color: 'bg-blue-500' },
   { label: 'Zone B - Climate control', pct: 61, color: 'bg-emerald-500' },
   { label: 'Zone C - Overflow', pct: 91, color: 'bg-orange-500' },
 ]
 
+const formatHolidayRange = (holiday: Holiday) => {
+  const start = new Date(holiday.startDate)
+  const end = new Date(holiday.endDate || holiday.startDate)
+  const startLabel = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const endLabel = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const sameDay =
+    start.getUTCFullYear() === end.getUTCFullYear() &&
+    start.getUTCMonth() === end.getUTCMonth() &&
+    start.getUTCDate() === end.getUTCDate()
+  return sameDay ? startLabel : `${startLabel} – ${endLabel}`
+}
+
 export default function DashboardIndex() {
+  const [holidays, setHolidays] = useState<Holiday[]>([])
+  const [holidaysLoading, setHolidaysLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setHolidaysLoading(true)
+      try {
+        const data = await holidaysApi.getAllHolidays()
+        if (!cancelled) setHolidays(Array.isArray(data) ? data : [])
+      } catch {
+        if (!cancelled) setHolidays([])
+      } finally {
+        if (!cancelled) setHolidaysLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const upcomingHolidays = useMemo(() => {
+    const today = new Date()
+    const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+
+    return holidays
+      .filter((h) => {
+        const end = new Date(h.endDate || h.startDate)
+        const endUtc = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())
+        return endUtc >= todayUtc
+      })
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+      .slice(0, 5)
+  }, [holidays])
+
   return (
     <div className="space-y-6">
       <section className="dashboard-hero relative">
@@ -50,33 +94,44 @@ export default function DashboardIndex() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Today&apos;s pulse</div>
-                <div className="mt-1 text-lg font-semibold text-foreground">Warehouse summary</div>
+                <div className="mt-1 text-lg font-semibold text-foreground">Upcoming holidays</div>
               </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
                 <div className="grid grid-cols-2 gap-0.5">
-                  <span className="h-1.5 w-1.5 rounded-sm bg-blue-500" />
-                  <span className="h-1.5 w-1.5 rounded-sm bg-blue-500" />
-                  <span className="h-1.5 w-1.5 rounded-sm bg-blue-500" />
-                  <span className="h-1.5 w-1.5 rounded-sm bg-blue-500" />
+                  <span className="h-1.5 w-1.5 rounded-sm bg-sky-500" />
+                  <span className="h-1.5 w-1.5 rounded-sm bg-sky-500" />
+                  <span className="h-1.5 w-1.5 rounded-sm bg-sky-500" />
+                  <span className="h-1.5 w-1.5 rounded-sm bg-sky-500" />
                 </div>
               </div>
             </div>
 
             <div className="mt-5 space-y-3">
-              {activity.map((item) => (
-                <div key={item.title} className="rounded-2xl border border-border bg-white/60 p-4 backdrop-blur">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-sm font-semibold text-foreground">{item.title}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{item.detail}</div>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-                      {item.time}
+              {holidaysLoading ? (
+                <div className="rounded-2xl border border-border bg-white/60 px-4 py-8 text-center text-sm text-muted-foreground backdrop-blur">
+                  Loading holidays…
+                </div>
+              ) : upcomingHolidays.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border bg-white/40 px-4 py-10 text-center backdrop-blur">
+                  <p className="text-sm font-medium text-foreground">No upcoming holidays.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Configured holidays will appear here when they are coming up.</p>
+                </div>
+              ) : (
+                upcomingHolidays.map((holiday) => (
+                  <div key={holiday.id} className="rounded-2xl border border-border bg-white/60 p-4 backdrop-blur">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">{holiday.name}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{formatHolidayRange(holiday)}</div>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-sky-600">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-sky-500" />
+                        Holiday
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>

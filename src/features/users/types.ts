@@ -6,6 +6,6 @@ export type User = {
   email?: string
   role?: string
   isActive?: boolean
-  passwordHash?: string | null
+  hasPassword?: boolean
 }
 

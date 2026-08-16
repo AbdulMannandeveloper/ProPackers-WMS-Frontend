@@ -83,7 +83,7 @@ export default function UserList() {
   }
 
   const handleToggleActive = (u: User) => {
-    if (!u.passwordHash) {
+    if (!u.hasPassword) {
       alert('Cannot change active state until this user has completed their password setup.')
       return
     }
@@ -205,7 +205,7 @@ export default function UserList() {
       const matchesRole = roleFilter === 'all' || u.role === roleFilter
 
       let status = 'pending'
-      if (u.passwordHash) {
+      if (u.hasPassword) {
         status = u.isActive ? 'active' : 'deactivated'
       }
       const matchesStatus = statusFilter === 'all' || status === statusFilter
@@ -319,7 +319,7 @@ export default function UserList() {
             </thead>
             <tbody className="divide-y divide-border">
               {filteredItems.map((u) => {
-                const isPending = !u.passwordHash
+                const isPending = !u.hasPassword
                 const statusText = isPending ? 'Pending' : (u.isActive ? 'Active' : 'Deactivated')
                 const statusClass = isPending
                   ? 'bg-amber-50 text-amber-700 ring-amber-200/80'

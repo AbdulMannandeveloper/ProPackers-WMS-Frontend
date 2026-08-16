@@ -55,19 +55,13 @@ export default function LoginPage() {
           return
         }
 
-        // store a client-side session marker so protected routes allow access
-        setToken(userId)
+        // store the signed session token returned by the backend
+        setToken(res.token)
         setUser(userId)
         if (res.role) setRole(res.role)
-        // fetch display name and persist it so layout doesn't need to fetch
-        try {
-          const users = await (await import('@/api')).users.getAllUsers()
-          const currentUser = Array.isArray(users) ? users.find((u: any) => u.id === userId) : null
-          const name = [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ').trim() || null
-          setDisplayName(name)
-        } catch {
-          setDisplayName(null)
-        }
+        // display name comes straight from the verify response (no directory fetch)
+        const name = [res.firstName, res.lastName].filter(Boolean).join(' ').trim() || null
+        setDisplayName(name)
 
         // Automatically record Clock-In if it's an employee or admin
         if (res.role === 'admin' || res.role === 'employee') {

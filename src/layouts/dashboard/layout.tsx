@@ -72,7 +72,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         const logs = await attendanceApi.getAttendanceLogByField('userId', currentUserId)
         const todayStr = new Date().toISOString().split('T')[0]
         const todayLog = logs.find((l) => l.date && l.date.split('T')[0] === todayStr)
-        if (todayLog && !todayLog.logoutTimestamp) {
+        if (todayLog && todayLog.status !== 'leave' && todayLog.loginTimestamp && !todayLog.logoutTimestamp) {
           await attendanceApi.updateLogoutTimestamp(todayLog.id, new Date().toISOString())
         }
       } catch (err) {

@@ -25,7 +25,6 @@
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.18.0",
     "react": "^19.2.4",
-    "react-d3-tree": "^3.6.6",
     "react-dom": "^19.2.4",
     "react-router": "^7.13.1",
     "tailwind-merge": "^3.5.0",

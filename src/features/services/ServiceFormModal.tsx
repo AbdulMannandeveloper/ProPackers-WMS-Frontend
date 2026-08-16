@@ -57,49 +57,60 @@ export default function ServiceFormModal({ open, onClose, onSave, initial }: Ser
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-        <h3 className="text-lg font-semibold mb-4">{initial ? 'Edit Service' : 'New Service'}</h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Description *</label>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter service description"
-              disabled={loading}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Idea Price *</label>
-            <Input
-              type="number"
-              step="0.01"
-              value={ideaPrice}
-              onChange={(e) => setIdeaPrice(e.target.value)}
-              placeholder="Enter price"
-              disabled={loading}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Unit *</label>
-            <Input
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder="Enter unit (e.g., hourly, item)"
-              disabled={loading}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="secondary" onClick={onClose} disabled={loading}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
-        </form>
-      </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={initial ? 'Edit Service' : 'New Service'}
+      description="Define the service description, idea price, and billing unit."
+      size="sm"
+      closeOnBackdropClick={!loading}
+      closeOnEsc={!loading}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button type="submit" form="service-form" disabled={loading}>
+            {loading ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      }
+    >
+      <form id="service-form" onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-foreground">Description *</label>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Enter service description"
+            disabled={loading}
+            className="h-9 rounded-lg"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-foreground">Idea Price (£) *</label>
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={ideaPrice}
+            onChange={(e) => setIdeaPrice(e.target.value)}
+            placeholder="0.00"
+            disabled={loading}
+            className="h-9 rounded-lg"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-foreground">Unit *</label>
+          <Input
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            placeholder="e.g. hourly, item, package"
+            disabled={loading}
+            className="h-9 rounded-lg"
+          />
+        </div>
+      </form>
     </Modal>
   )
 }

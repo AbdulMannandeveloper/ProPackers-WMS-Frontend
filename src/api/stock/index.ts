@@ -1,4 +1,5 @@
 import httpClient from '../http-client'
+import { fetchAllPages, type PaginatedResponse, unwrapList } from '../pagination'
 
 const BASE = '/api/stock'
 
@@ -28,14 +29,30 @@ export type StockLevel = {
   }
 }
 
+export const getStockLevelsPage = (
+  page = 1,
+  limit = 50,
+): Promise<PaginatedResponse<StockLevel> | StockLevel[]> =>
+  httpClient({ method: 'GET', url: `${BASE}/`, params: { page, limit } })
+
 export const getAllStockLevels = (): Promise<StockLevel[]> =>
-  httpClient({ method: 'GET', url: `${BASE}/` })
+  fetchAllPages((page, limit) => getStockLevelsPage(page, limit))
 
-export const getStockLevelByProductId = (productId: string): Promise<StockLevel[]> =>
-  httpClient({ method: 'GET', url: `${BASE}/product/${productId}` })
+export const getStockLevelByProductId = async (productId: string): Promise<StockLevel[]> => {
+  const result = await httpClient<StockLevel[] | PaginatedResponse<StockLevel>>({
+    method: 'GET',
+    url: `${BASE}/product/${productId}`,
+  })
+  return unwrapList(result)
+}
 
-export const getStockLevelByLocationId = (locationId: string): Promise<StockLevel[]> =>
-  httpClient({ method: 'GET', url: `${BASE}/location/${locationId}` })
+export const getStockLevelByLocationId = async (locationId: string): Promise<StockLevel[]> => {
+  const result = await httpClient<StockLevel[] | PaginatedResponse<StockLevel>>({
+    method: 'GET',
+    url: `${BASE}/location/${locationId}`,
+  })
+  return unwrapList(result)
+}
 
 export const createStockLevel = (payload: {
   productId: string
@@ -73,6 +90,7 @@ export const deleteStockLevel = (id: string): Promise<{ message: string }> =>
 
 export default {
   getAllStockLevels,
+  getStockLevelsPage,
   getStockLevelByProductId,
   getStockLevelByLocationId,
   createStockLevel,

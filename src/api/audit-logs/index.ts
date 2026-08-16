@@ -1,4 +1,5 @@
 import httpClient from '../http-client'
+import { fetchAllPages, type PaginatedResponse } from '../pagination'
 
 const BASE = '/api/audit-logs'
 
@@ -15,9 +16,16 @@ export type AuditLogEntry = {
   }
 }
 
+export const getAuditLogsPage = (
+  page = 1,
+  limit = 50,
+): Promise<PaginatedResponse<AuditLogEntry> | AuditLogEntry[]> =>
+  httpClient({ method: 'GET', url: `${BASE}/`, params: { page, limit } })
+
 export const getAllAuditLogs = (): Promise<AuditLogEntry[]> =>
-  httpClient({ method: 'GET', url: `${BASE}/` })
+  fetchAllPages((page, limit) => getAuditLogsPage(page, limit))
 
 export default {
   getAllAuditLogs,
+  getAuditLogsPage,
 }

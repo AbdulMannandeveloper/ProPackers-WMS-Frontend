@@ -1,4 +1,5 @@
 import httpClient from '../http-client'
+import { fetchAllPages, type PaginatedResponse, unwrapList } from '../pagination'
 
 const BASE = '/api/inventory-ledgers'
 
@@ -34,14 +35,24 @@ export type InventoryLedgerEntry = {
   } | null
 }
 
+export const getInventoryLedgersPage = (
+  page = 1,
+  limit = 50,
+): Promise<PaginatedResponse<InventoryLedgerEntry> | InventoryLedgerEntry[]> =>
+  httpClient({ method: 'GET', url: `${BASE}/`, params: { page, limit } })
+
 export const getAllInventoryLedgers = (): Promise<InventoryLedgerEntry[]> =>
-  httpClient({ method: 'GET', url: `${BASE}/` })
+  fetchAllPages((page, limit) => getInventoryLedgersPage(page, limit))
 
 export const getInventoryLedgerByField = (field: string, value: string): Promise<InventoryLedgerEntry[]> =>
-  httpClient({ method: 'GET', url: `${BASE}/${field}/${value}` })
+  httpClient({ method: 'GET', url: `${BASE}/${field}/${value}` }).then((r) =>
+    unwrapList(r as InventoryLedgerEntry[] | PaginatedResponse<InventoryLedgerEntry>),
+  )
 
 export const getInventoryLedgerByClientId = (clientId: string): Promise<InventoryLedgerEntry[]> =>
-  httpClient({ method: 'GET', url: `${BASE}/client/${clientId}` })
+  httpClient({ method: 'GET', url: `${BASE}/client/${clientId}` }).then((r) =>
+    unwrapList(r as InventoryLedgerEntry[] | PaginatedResponse<InventoryLedgerEntry>),
+  )
 
 export const getLedgerWithFilters = (params: {
   startDate?: string
@@ -49,14 +60,24 @@ export const getLedgerWithFilters = (params: {
   productId?: string
   clientId?: string
   movementType?: string
+  page?: number
+  limit?: number
 }): Promise<InventoryLedgerEntry[]> => {
-  const query = new URLSearchParams()
-  if (params.startDate) query.set('startDate', params.startDate)
-  if (params.endDate) query.set('endDate', params.endDate)
-  if (params.productId) query.set('productId', params.productId)
-  if (params.clientId) query.set('clientId', params.clientId)
-  if (params.movementType) query.set('movementType', params.movementType)
-  return httpClient({ method: 'GET', url: `${BASE}/filter?${query.toString()}` })
+  return fetchAllPages((page, limit) =>
+    httpClient({
+      method: 'GET',
+      url: `${BASE}/filter`,
+      params: {
+        startDate: params.startDate,
+        endDate: params.endDate,
+        productId: params.productId,
+        clientId: params.clientId,
+        movementType: params.movementType,
+        page,
+        limit,
+      },
+    }),
+  )
 }
 
 export const getDailyCheckoutSummary = (date?: string): Promise<any[]> => {
@@ -77,6 +98,7 @@ export const createInventoryLedgerEntry = (payload: {
 
 export default {
   getAllInventoryLedgers,
+  getInventoryLedgersPage,
   getInventoryLedgerByField,
   getInventoryLedgerByClientId,
   getLedgerWithFilters,

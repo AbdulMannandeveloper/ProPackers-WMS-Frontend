@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
-import { Maximize, Minimize } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Maximize, Minimize, Pencil, Trash2, ChevronRight, X } from 'lucide-react'
 import { warehouseLocations as api } from '@/api'
-import { Button, Input, Select } from '@/components/Shared Components'
+import { Button, Input, Modal, Select } from '@/components/Shared Components'
 import WarehouseLocationFormModal from './WarehouseLocationFormModal'
-import WarehouseTree from './WarehouseTree'
+import WarehouseExplorer from './WarehouseExplorer'
+import { useWarehouseMap, depthStyle } from './useWarehouseMap'
 import type { WarehouseLocation, WarehouseLocationClass } from '@/api/warehouseLocations'
 
 type ClassDraft = {
@@ -12,12 +13,52 @@ type ClassDraft = {
   parentClassId: string
 }
 
+/**
+ * Longest chain of classes reachable through parentClassId, used for the
+ * ZONE -> AISLE -> SHELF -> BIN preview strip.
+ */
+const buildClassLadder = (classes: WarehouseLocationClass[]) => {
+  const childrenOf = new Map<string, WarehouseLocationClass[]>()
+  const roots: WarehouseLocationClass[] = []
+
+  for (const klass of classes) {
+    if (klass.parentClassId) {
+      const siblings = childrenOf.get(klass.parentClassId) ?? []
+      siblings.push(klass)
+      childrenOf.set(klass.parentClassId, siblings)
+    } else {
+      roots.push(klass)
+    }
+  }
+
+  const longestFrom = (klass: WarehouseLocationClass, seen: Set<string>): WarehouseLocationClass[] => {
+    if (seen.has(klass.id)) return [klass]
+    seen.add(klass.id)
+
+    let best: WarehouseLocationClass[] = []
+    for (const child of childrenOf.get(klass.id) ?? []) {
+      const chain = longestFrom(child, new Set(seen))
+      if (chain.length > best.length) best = chain
+    }
+
+    return [klass, ...best]
+  }
+
+  let ladder: WarehouseLocationClass[] = []
+  for (const root of roots) {
+    const chain = longestFrom(root, new Set())
+    if (chain.length > ladder.length) ladder = chain
+  }
+
+  return ladder
+}
+
 export default function WarehouseLocationList() {
-  const [items, setItems] = useState<WarehouseLocation[]>([])
-  const [classes, setClasses] = useState<WarehouseLocationClass[]>([])
-  const [loading, setLoading] = useState(false)
+  const { locations: items, classes, stockLevels, roots, nodeById, loading, error, reload } = useWarehouseMap()
+
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<WarehouseLocation | null>(null)
+  const [defaultParentId, setDefaultParentId] = useState<string | null>(null)
   const [editingClassId, setEditingClassId] = useState<string | null>(null)
   const [classDraft, setClassDraft] = useState<ClassDraft>({
     name: '',
@@ -25,38 +66,31 @@ export default function WarehouseLocationList() {
     parentClassId: '',
   })
   const [classSaving, setClassSaving] = useState(false)
-  const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<'setup' | 'locations'>('setup')
-  const [viewMode, setViewMode] = useState<'tree' | 'table'>('tree')
+  const [viewMode, setViewMode] = useState<'explorer' | 'table'>('explorer')
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  const load = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const [locationData, classData] = await Promise.all([
-        api.getAllWarehouseLocations(),
-        api.getAllWarehouseLocationClasses(),
-      ])
+  const [confirmClass, setConfirmClass] = useState<WarehouseLocationClass | null>(null)
+  const [confirmLocation, setConfirmLocation] = useState<WarehouseLocation | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
 
-      setItems(Array.isArray(locationData) ? locationData : [])
-      setClasses(Array.isArray(classData) ? classData : [])
-    } catch (e: any) {
-      setItems([])
-      setClasses([])
-      setError(e?.response?.data?.error || e?.message || 'Failed to load warehouse module data.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const classLadder = useMemo(() => buildClassLadder(classes), [classes])
 
   const handleCreateClick = () => {
     setEditing(null)
+    setDefaultParentId(null)
     setModalOpen(true)
   }
 
   const handleEditClick = (s: WarehouseLocation) => {
     setEditing(s)
+    setDefaultParentId(null)
+    setModalOpen(true)
+  }
+
+  const handleAddChildClick = (parent: WarehouseLocation) => {
+    setEditing(null)
+    setDefaultParentId(parent.id)
     setModalOpen(true)
   }
 
@@ -69,7 +103,7 @@ export default function WarehouseLocationList() {
     } else {
       await api.createWarehouseLocation(payload)
     }
-    await load()
+    await reload()
   }
 
   const handleSaveClass = async () => {
@@ -95,7 +129,7 @@ export default function WarehouseLocationList() {
         })
       }
       setClassDraft({ name: '', description: '', parentClassId: '' })
-      await load()
+      await reload()
     } catch (e) {
       alert((e as any)?.response?.data?.error || (e as any)?.message || 'Failed to save class')
     } finally {
@@ -117,30 +151,39 @@ export default function WarehouseLocationList() {
     setClassDraft({ name: '', description: '', parentClassId: '' })
   }
 
-  const handleDeleteClass = async (klass: WarehouseLocationClass) => {
-    if (!confirm(`Delete location class ${klass.name}?`)) return
+  const closeConfirmModal = () => {
+    if (actionLoading) return
+    setConfirmClass(null)
+    setConfirmLocation(null)
+  }
+
+  const executeDelete = async () => {
+    setActionLoading(true)
     try {
-      await api.deleteWarehouseLocationClass(klass.id)
-      await load()
+      if (confirmClass) {
+        await api.deleteWarehouseLocationClass(confirmClass.id)
+      } else if (confirmLocation) {
+        await api.deleteWarehouseLocation(confirmLocation.id)
+      }
+      setConfirmClass(null)
+      setConfirmLocation(null)
+      await reload()
     } catch (e) {
-      alert((e as any)?.response?.data?.error || (e as any)?.message || 'Failed to delete class')
+      alert(
+        (e as any)?.response?.data?.error ||
+          (e as any)?.message ||
+          `Failed to delete ${confirmClass ? 'class' : 'location'}`,
+      )
+    } finally {
+      setActionLoading(false)
     }
   }
 
-  useEffect(() => {
-    void load()
-  }, [])
-
-  const handleDelete = async (s: WarehouseLocation) => {
-    const label = s.locationName || 'this location'
-    if (!confirm(`Delete location ${label}?`)) return
-    try {
-      await api.deleteWarehouseLocation(s.id)
-      await load()
-    } catch (e) {
-      alert((e as any)?.message || 'Failed to delete location')
-    }
-  }
+  const confirmTarget = confirmClass
+    ? { kind: 'class' as const, label: confirmClass.name }
+    : confirmLocation
+      ? { kind: 'location' as const, label: confirmLocation.locationName || 'this location' }
+      : null
 
   return (
     <div className="space-y-4">
@@ -169,80 +212,152 @@ export default function WarehouseLocationList() {
         </button>
       </div>
 
-      {activeTab === 'setup' && (
-        <div className="bg-white rounded-xl p-4 shadow">
-          <div className="mb-4">
-            <h2 className="text-lg font-medium">Location Classes</h2>
-            <p className="text-sm text-slate-500 mt-1">Define the types of locations in your warehouse (e.g. Zone, Floor, Aisle, Shelf).</p>
-          </div>
-
-          <div className="grid gap-2 md:grid-cols-[1.2fr_1.5fr_1.2fr_auto_auto] md:items-center bg-slate-50/60 p-4 rounded-xl border border-slate-200">
-            <Input
-              placeholder="Class name (e.g. Zone, Aisle, Shelf)"
-              value={classDraft.name}
-              onChange={(e) => setClassDraft((s) => ({ ...s, name: e.target.value }))}
-              disabled={classSaving}
-            />
-            <Input
-              placeholder="Description (optional)"
-              value={classDraft.description}
-              onChange={(e) => setClassDraft((s) => ({ ...s, description: e.target.value }))}
-              disabled={classSaving}
-            />
-            <Select
-              value={classDraft.parentClassId}
-              onChange={(e) => setClassDraft((s) => ({ ...s, parentClassId: e.target.value }))}
-              disabled={classSaving}
-            >
-              <option value="">No parent class</option>
-              {classes
-                .filter((klass) => klass.id !== editingClassId)
-                .map((klass) => (
-                  <option key={klass.id} value={klass.id}>{klass.name}</option>
-                ))}
-            </Select>
-            <Button onClick={handleSaveClass} disabled={classSaving}>
-              {editingClassId ? (classSaving ? 'Saving...' : 'Save Class') : (classSaving ? 'Saving...' : 'Add Class')}
+      <Modal
+        open={Boolean(confirmTarget)}
+        onClose={closeConfirmModal}
+        title={confirmTarget?.kind === 'class' ? 'Delete location class' : 'Delete location'}
+        description={
+          confirmTarget?.kind === 'class'
+            ? 'Classes still in use by locations cannot be removed.'
+            : 'Child locations and stock records may block this deletion.'
+        }
+        size="sm"
+        closeOnBackdropClick={!actionLoading}
+        closeOnEsc={!actionLoading}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={closeConfirmModal} disabled={actionLoading}>
+              Cancel
             </Button>
-            {editingClassId && (
-              <Button variant="secondary" onClick={handleCancelClassEdit} disabled={classSaving}>
-                Cancel
-              </Button>
+            <Button variant="destructive" onClick={() => void executeDelete()} disabled={actionLoading}>
+              {actionLoading ? 'Deleting…' : 'Delete'}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          Are you sure you want to delete <span className="font-medium text-foreground">{confirmTarget?.label}</span>?
+          This action cannot be undone.
+        </p>
+      </Modal>
+
+      {activeTab === 'setup' && (
+        <div className="rounded-xl border border-border bg-white shadow-sm">
+          <div className="space-y-4 border-b border-border p-5">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Location Classes</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Define the types of locations in your warehouse (e.g. Zone, Aisle, Shelf, Bin).
+              </p>
+            </div>
+
+            {classLadder.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Hierarchy
+                </span>
+                {classLadder.map((klass, index) => {
+                  const style = depthStyle(index)
+                  return (
+                    <span key={klass.id} className="flex items-center gap-1.5">
+                      {index > 0 && <ChevronRight className="size-3 text-slate-300" />}
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full ${style.soft} ${style.text} px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide`}
+                      >
+                        <span className={`size-1.5 rounded-full ${style.dot}`} aria-hidden />
+                        {klass.name}
+                      </span>
+                    </span>
+                  )
+                })}
+              </div>
             )}
+
+            <div className="grid gap-2 rounded-xl border border-border bg-muted/30 p-4 md:grid-cols-[1.2fr_1.5fr_1.2fr_auto_auto] md:items-center">
+              <Input
+                placeholder="Class name (e.g. Zone, Aisle, Shelf)"
+                value={classDraft.name}
+                onChange={(e) => setClassDraft((s) => ({ ...s, name: e.target.value }))}
+                disabled={classSaving}
+              />
+              <Input
+                placeholder="Description (optional)"
+                value={classDraft.description}
+                onChange={(e) => setClassDraft((s) => ({ ...s, description: e.target.value }))}
+                disabled={classSaving}
+              />
+              <Select
+                value={classDraft.parentClassId}
+                onChange={(e) => setClassDraft((s) => ({ ...s, parentClassId: e.target.value }))}
+                disabled={classSaving}
+              >
+                <option value="">No parent class</option>
+                {classes
+                  .filter((klass) => klass.id !== editingClassId)
+                  .map((klass) => (
+                    <option key={klass.id} value={klass.id}>{klass.name}</option>
+                  ))}
+              </Select>
+              <Button onClick={handleSaveClass} disabled={classSaving}>
+                {editingClassId ? (classSaving ? 'Saving...' : 'Save Class') : (classSaving ? 'Saving...' : 'Add Class')}
+              </Button>
+              {editingClassId && (
+                <Button variant="secondary" onClick={handleCancelClassEdit} disabled={classSaving}>
+                  Cancel
+                </Button>
+              )}
+            </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="py-2">Class</th>
-                  <th className="py-2">Parent Class</th>
-                  <th className="py-2">Description</th>
-                  <th className="py-2 text-right">Actions</th>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Class</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Parent Class</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Description</th>
+                  <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border">
                 {classes.map((klass) => {
                   const parentClass = classes.find((c) => c.id === klass.parentClassId)
                   return (
-                    <tr key={klass.id} className="border-t">
-                      <td className="py-2 font-medium">{klass.name}</td>
-                      <td className="py-2">{parentClass?.name || '—'}</td>
-                      <td className="py-2 text-slate-600">{klass.description || '—'}</td>
-                      <td className="py-2 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => handleEditClassClick(klass)}>
-                          Edit
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteClass(klass)} className="ml-2">
-                          Delete
-                        </Button>
+                    <tr key={klass.id} className="transition-colors hover:bg-slate-50/80">
+                      <td className="px-5 py-3.5 text-sm font-medium text-foreground">{klass.name}</td>
+                      <td className="px-5 py-3.5 text-sm text-muted-foreground">{parentClass?.name || '—'}</td>
+                      <td className="px-5 py-3.5 text-sm text-muted-foreground">{klass.description || '—'}</td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex justify-end">
+                          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border/80 bg-white p-0.5 shadow-sm">
+                            <button
+                              type="button"
+                              title="Edit class"
+                              aria-label="Edit class"
+                              onClick={() => handleEditClassClick(klass)}
+                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                            >
+                              <Pencil className="size-3.5" strokeWidth={1.75} />
+                            </button>
+                            <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+                            <button
+                              type="button"
+                              title="Delete class"
+                              aria-label="Delete class"
+                              onClick={() => setConfirmClass(klass)}
+                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <Trash2 className="size-3.5" strokeWidth={1.75} />
+                            </button>
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   )
                 })}
                 {classes.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-400">
+                    <td colSpan={4} className="px-5 py-12 text-center text-sm text-muted-foreground">
                       No location classes created yet.
                     </td>
                   </tr>
@@ -254,17 +369,57 @@ export default function WarehouseLocationList() {
       )}
 
       {activeTab === 'locations' && (
-        <div className="bg-white rounded-xl p-4 shadow flex flex-col min-h-[600px] h-[calc(100vh-200px)]">
-          <div className="flex items-center justify-between mb-4 shrink-0">
+        <div
+          className={
+            isFullscreen
+              ? 'fixed inset-0 z-[100] flex flex-col bg-white p-4'
+              : 'flex h-[calc(100vh-200px)] min-h-[600px] flex-col rounded-xl border border-border bg-white shadow-sm'
+          }
+        >
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border p-5">
             <div>
-              <h3 className="text-lg font-medium">Physical Locations Hierarchy</h3>
-              <p className="text-sm text-slate-500 mt-1">Interactive org-chart style view of your warehouse layout.</p>
+              <h3 className="text-xl font-semibold text-foreground">Warehouse Explorer</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Drill through zones, aisles and bins to see what each location holds.
+              </p>
             </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setViewMode(viewMode === 'table' ? 'tree' : 'table')}>
-                {viewMode === 'table' ? 'View as Tree' : 'View as Table'}
-              </Button>
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+                {(['explorer', 'table'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setViewMode(mode)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                      viewMode === mode
+                        ? 'bg-white text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                className="inline-flex size-9 items-center justify-center rounded-lg border border-border text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900"
+              >
+                {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+              </button>
               <Button onClick={handleCreateClick} disabled={classes.length === 0}>New Location</Button>
+              {isFullscreen && (
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreen(false)}
+                  aria-label="Close fullscreen"
+                  className="inline-flex size-9 items-center justify-center rounded-lg border border-border text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -273,68 +428,72 @@ export default function WarehouseLocationList() {
             onClose={() => setModalOpen(false)}
             onSave={handleSave}
             initial={editing}
+            defaultParentId={defaultParentId}
             classes={classes}
             locations={items}
           />
 
-          <div className={
-            viewMode === 'tree' 
-              ? isFullscreen 
-                ? 'fixed inset-0 z-[100] bg-slate-50 flex flex-col' 
-                : 'flex-1 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden relative'
-              : 'flex-1 overflow-hidden relative'
-          }>
-            {viewMode === 'tree' && (
-              <button
-                onClick={() => setIsFullscreen(!isFullscreen)}
-                className="absolute top-4 right-4 z-10 bg-white border border-slate-200 rounded p-2 shadow-sm text-slate-500 hover:text-slate-800"
-                title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-              >
-                {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-              </button>
-            )}
-
+          <div className="min-h-0 flex-1 overflow-hidden">
             {loading ? (
-              <div className="absolute inset-0 flex items-center justify-center text-slate-400">Loading data...</div>
-            ) : viewMode === 'tree' ? (
-              <WarehouseTree
-                locations={items}
-                classes={classes}
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading data...</div>
+            ) : viewMode === 'explorer' ? (
+              <WarehouseExplorer
+                roots={roots}
+                nodeById={nodeById}
+                stockLevels={stockLevels}
                 onEdit={handleEditClick}
-                onDelete={handleDelete}
+                onDelete={(location) => setConfirmLocation(location)}
+                onAddChild={handleAddChildClick}
               />
             ) : (
-              <div className="overflow-x-auto">
+              <div className="h-full overflow-auto">
                 <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="py-2">Location</th>
-                      <th className="py-2">Class</th>
-                      <th className="py-2">Parent</th>
-                      <th className="py-2">Path</th>
-                      <th className="py-2">Actions</th>
+                  <thead className="sticky top-0 z-10 bg-muted/40 backdrop-blur">
+                    <tr className="border-b border-border">
+                      <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Location</th>
+                      <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Class</th>
+                      <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Parent</th>
+                      <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Path</th>
+                      <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border">
                     {items.map((s) => (
-                      <tr key={s.id} className="border-t">
-                        <td className="py-2">{s.locationName ?? '—'}</td>
-                        <td className="py-2">{s.locationClass?.name ?? '—'}</td>
-                        <td className="py-2">{s.parentLocation?.locationName ?? '—'}</td>
-                        <td className="py-2 text-slate-500 text-sm">{s.materializedPath ?? '—'}</td>
-                        <td className="py-2">
-                          <Button variant="ghost" size="sm" onClick={() => handleEditClick(s)}>
-                            Edit
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDelete(s)} className="ml-2">
-                            Delete
-                          </Button>
+                      <tr key={s.id} className="transition-colors hover:bg-slate-50/80">
+                        <td className="px-5 py-3.5 text-sm font-medium text-foreground">{s.locationName ?? '—'}</td>
+                        <td className="px-5 py-3.5 text-sm text-muted-foreground">{s.locationClass?.name ?? '—'}</td>
+                        <td className="px-5 py-3.5 text-sm text-muted-foreground">{s.parentLocation?.locationName ?? '—'}</td>
+                        <td className="px-5 py-3.5 font-mono text-xs text-muted-foreground">{s.materializedPath ?? '—'}</td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex justify-end">
+                            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border/80 bg-white p-0.5 shadow-sm">
+                              <button
+                                type="button"
+                                title="Edit location"
+                                aria-label="Edit location"
+                                onClick={() => handleEditClick(s)}
+                                className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                              >
+                                <Pencil className="size-3.5" strokeWidth={1.75} />
+                              </button>
+                              <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+                              <button
+                                type="button"
+                                title="Delete location"
+                                aria-label="Delete location"
+                                onClick={() => setConfirmLocation(s)}
+                                className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              >
+                                <Trash2 className="size-3.5" strokeWidth={1.75} />
+                              </button>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     ))}
                     {items.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                        <td colSpan={5} className="px-5 py-12 text-center text-sm text-muted-foreground">
                           No locations found.
                         </td>
                       </tr>

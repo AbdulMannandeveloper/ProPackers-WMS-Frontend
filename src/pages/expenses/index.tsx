@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { expenses as expensesApi } from '@/api'
+import { AXIOS_INSTANCE } from '@/api/http-client'
 import type { Expense, ExpenseCategory } from '@/api/expenses'
 import {
   Button,
@@ -60,6 +61,7 @@ export default function ExpensesPage() {
   const [addCategoryModalOpen, setAddCategoryModalOpen] = useState(false)
   const [receiptPreviewModalOpen, setReceiptPreviewModalOpen] = useState(false)
   const [selectedReceiptUrl, setSelectedReceiptUrl] = useState('')
+  const [selectedReceiptIsPdf, setSelectedReceiptIsPdf] = useState(false)
 
   // Form states
   const [expenseForm, setExpenseForm] = useState({ categoryId: '', amount: '', date: new Date().toISOString().split('T')[0], description: '' })
@@ -182,10 +184,19 @@ export default function ExpensesPage() {
     return expenses.reduce((acc, e) => acc + Number(e.amount), 0)
   }, [expenses])
 
-  const handleOpenReceiptPreview = (url: string) => {
-    const backendBase = 'http://localhost:8000' // backend server base URL
-    setSelectedReceiptUrl(`${backendBase}${url}`)
+  const handleOpenReceiptPreview = async (url: string) => {
+    // Receipts are served from an authenticated endpoint, so fetch them through
+    // the API client (which attaches the bearer token) and preview via a blob URL.
+    setSelectedReceiptIsPdf(url.toLowerCase().endsWith('.pdf'))
     setReceiptPreviewModalOpen(true)
+    try {
+      const res = await AXIOS_INSTANCE.get(url, { responseType: 'blob' })
+      const objectUrl = URL.createObjectURL(res.data as Blob)
+      setSelectedReceiptUrl(objectUrl)
+    } catch (err) {
+      showToast((err as any)?.response?.data?.error || 'Failed to load receipt.', 'error')
+      setReceiptPreviewModalOpen(false); setSelectedReceiptUrl('')
+    }
   }
 
   return (
@@ -488,7 +499,9 @@ export default function ExpensesPage() {
             </button>
           </CardHeader>
           <CardContent className="flex justify-center items-center min-h-60 p-5 bg-slate-50 dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800">
-            {selectedReceiptUrl.endsWith('.pdf') ? (
+            {!selectedReceiptUrl ? (
+              <div className="text-sm text-slate-500">Loading receipt…</div>
+            ) : selectedReceiptIsPdf ? (
               <iframe src={selectedReceiptUrl} className="w-full h-[450px] rounded-xl" title="Receipt PDF Preview" />
             ) : (
               <img src={selectedReceiptUrl} className="max-w-full max-h-[450px] object-contain rounded-xl shadow" alt="Receipt Upload" />

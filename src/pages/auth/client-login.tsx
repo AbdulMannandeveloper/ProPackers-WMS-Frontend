@@ -55,17 +55,11 @@ export default function ClientLoginPage() {
         return
       }
 
-      setToken(userId)
+      setToken(res.token)
       setUser(userId)
       setRole(res.role)
-      try {
-        const users = await (await import('@/api')).users.getAllUsers()
-        const currentUser = Array.isArray(users) ? users.find((u: any) => u.id === userId) : null
-        const name = [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ').trim() || null
-        setDisplayName(name)
-      } catch {
-        setDisplayName(null)
-      }
+      const name = [res.firstName, res.lastName].filter(Boolean).join(' ').trim() || null
+      setDisplayName(name)
       navigate('/client')
     } catch (err) {
       setError((err as any)?.response?.data?.error || (err as any)?.message || 'OTP verification failed.')

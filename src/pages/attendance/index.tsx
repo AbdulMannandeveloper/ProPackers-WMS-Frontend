@@ -4,6 +4,7 @@ import { attendance as api, users as usersApi, shifts as shiftsApi, holidays as 
 import type { AttendanceLog } from '@/api/attendance'
 import type { Holiday } from '@/api/holidays'
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Badge, Input, Select, Modal } from '@/components/Shared Components'
+import EmployeeAttendanceAnalyticsModal from '@/features/attendance/EmployeeAttendanceAnalyticsModal'
 
 export default function AttendancePage() {
   const role = useAuthStore((s) => s.role)
@@ -56,6 +57,18 @@ export default function AttendancePage() {
   // Delete Confirm State
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteLogId, setDeleteLogId] = useState<string | null>(null)
+
+  // Leave confirm: mark or clear
+  const [leaveConfirm, setLeaveConfirm] = useState<{
+    userId: string
+    name: string
+    mode: 'mark' | 'clear'
+    forceOverwrite?: boolean
+  } | null>(null)
+  const [leaveLoading, setLeaveLoading] = useState(false)
+
+  // Employee analytics drawer
+  const [analyticsUser, setAnalyticsUser] = useState<{ id: string; name: string } | null>(null)
 
   // Edit Form Fields
   const [editLogin, setEditLogin] = useState('')
@@ -159,7 +172,7 @@ export default function AttendancePage() {
           ? userLogs.find((l) => l.date && l.date.split('T')[0] === todayStr)
           : null
 
-        if (todayLog) {
+        if (todayLog && todayLog.status !== 'leave' && todayLog.loginTimestamp) {
           // Update logout timestamp on every logout (last logout = checkout time)
           await api.updateLogoutTimestamp(todayLog.id, new Date().toISOString())
         }
@@ -237,12 +250,26 @@ export default function AttendancePage() {
     if (!editingLog) return
     setEditLoading(true)
     try {
-      await api.updateAttendanceLog(editingLog.id, {
-        loginTimestamp: new Date(editLogin).toISOString(),
-        logoutTimestamp: editLogout ? new Date(editLogout).toISOString() : null,
-        status: editStatus,
-        date: `${editDate}T00:00:00.000Z`,
-      })
+      if (editStatus === 'leave') {
+        await api.updateAttendanceLog(editingLog.id, {
+          loginTimestamp: null,
+          logoutTimestamp: null,
+          status: 'leave',
+          date: `${editDate}T00:00:00.000Z`,
+        })
+      } else {
+        if (!editLogin) {
+          showToast('Clock-in timestamp is required for worked days.', 'error')
+          setEditLoading(false)
+          return
+        }
+        await api.updateAttendanceLog(editingLog.id, {
+          loginTimestamp: new Date(editLogin).toISOString(),
+          logoutTimestamp: editLogout ? new Date(editLogout).toISOString() : null,
+          status: editStatus,
+          date: `${editDate}T00:00:00.000Z`,
+        })
+      }
       setModalOpen(false)
       setEditingLog(null)
       showToast('Attendance log updated successfully.')
@@ -251,6 +278,36 @@ export default function AttendancePage() {
       showToast(e?.response?.data?.error || e?.message || 'Failed to update attendance log', 'error')
     } finally {
       setEditLoading(false)
+    }
+  }
+
+  const executeLeaveAction = async () => {
+    if (!leaveConfirm) return
+    setLeaveLoading(true)
+    try {
+      if (leaveConfirm.mode === 'clear') {
+        await api.unmarkLeave({ userId: leaveConfirm.userId, date: `${selectedDate}T00:00:00.000Z` })
+        showToast('Leave cleared.')
+      } else {
+        await api.markLeave({
+          userId: leaveConfirm.userId,
+          date: `${selectedDate}T00:00:00.000Z`,
+          forceOverwrite: leaveConfirm.forceOverwrite === true,
+        })
+        showToast('Day marked as leave.')
+      }
+      setLeaveConfirm(null)
+      await loadData()
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || e?.message || 'Leave action failed.'
+      if (e?.response?.status === 409 && leaveConfirm.mode === 'mark' && !leaveConfirm.forceOverwrite) {
+        setLeaveConfirm({ ...leaveConfirm, forceOverwrite: true })
+        showToast('A worked record exists — confirm again to overwrite as leave.', 'error')
+      } else {
+        showToast(msg, 'error')
+      }
+    } finally {
+      setLeaveLoading(false)
     }
   }
 
@@ -311,6 +368,45 @@ export default function AttendancePage() {
     return logs.find((l) => l.date && l.date.split('T')[0] === todayStr)
   }, [logs, todayStr, isAdmin])
 
+  const isDateInHoliday = (dateStr: string) => {
+    const day = new Date(`${dateStr}T00:00:00.000Z`).getTime()
+    return holidays.some((h) => {
+      const start = new Date(h.startDate).getTime()
+      const end = new Date(h.endDate || h.startDate).getTime()
+      const startDay = Date.UTC(
+        new Date(start).getUTCFullYear(),
+        new Date(start).getUTCMonth(),
+        new Date(start).getUTCDate(),
+      )
+      const endDay = Date.UTC(
+        new Date(end).getUTCFullYear(),
+        new Date(end).getUTCMonth(),
+        new Date(end).getUTCDate(),
+      )
+      return day >= startDay && day <= endDay
+    })
+  }
+
+  const selectedDateIsHoliday = useMemo(() => isDateInHoliday(selectedDate), [selectedDate, holidays])
+  const selectedHolidayName = useMemo(() => {
+    if (!selectedDateIsHoliday) return null
+    const day = new Date(`${selectedDate}T00:00:00.000Z`).getTime()
+    const match = holidays.find((h) => {
+      const start = Date.UTC(
+        new Date(h.startDate).getUTCFullYear(),
+        new Date(h.startDate).getUTCMonth(),
+        new Date(h.startDate).getUTCDate(),
+      )
+      const end = Date.UTC(
+        new Date(h.endDate || h.startDate).getUTCFullYear(),
+        new Date(h.endDate || h.startDate).getUTCMonth(),
+        new Date(h.endDate || h.startDate).getUTCDate(),
+      )
+      return day >= start && day <= end
+    })
+    return match?.name ?? 'Holiday'
+  }, [selectedDateIsHoliday, selectedDate, holidays])
+
   // Memoized stats for Admin View
   const adminDayRecords = useMemo(() => {
     return logs.filter((l) => l.date && l.date.split('T')[0] === selectedDate)
@@ -319,11 +415,18 @@ export default function AttendancePage() {
   const adminStats = useMemo(() => {
     const onTime = adminDayRecords.filter((r) => r.status === 'on-time').length
     const late = adminDayRecords.filter((r) => r.status === 'late').length
-    const presentCount = adminDayRecords.length
+    const leave = adminDayRecords.filter((r) => r.status === 'leave').length
+    const accounted = adminDayRecords.length
     const totalUsers = users.length
-    const absent = Math.max(0, totalUsers - presentCount)
-    return { onTime, late, absent }
-  }, [adminDayRecords, users])
+
+    if (selectedDateIsHoliday) {
+      const holiday = Math.max(0, totalUsers - accounted)
+      return { onTime, late, leave, absent: 0, holiday }
+    }
+
+    const absent = Math.max(0, totalUsers - accounted)
+    return { onTime, late, leave, absent, holiday: 0 }
+  }, [adminDayRecords, users, selectedDateIsHoliday])
 
   const adminEmployeeTableData = useMemo(() => {
     return users.map((u) => {
@@ -337,10 +440,23 @@ export default function AttendancePage() {
     return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  const calculateHours = (login?: string, logout?: string | null) => {
+  const calculateHours = (login?: string | null, logout?: string | null) => {
     if (!login || !logout) return '—'
     const diffMs = new Date(logout).getTime() - new Date(login).getTime()
     return (diffMs / (1000 * 60 * 60)).toFixed(1) + ' hrs'
+  }
+
+  const statusBadge = (status: string) => {
+    if (status === 'on-time') return <Badge variant="default">on-time</Badge>
+    if (status === 'late') return <Badge variant="secondary">late</Badge>
+    if (status === 'leave') {
+      return (
+        <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700">
+          leave
+        </span>
+      )
+    }
+    return <Badge variant="secondary">{status}</Badge>
   }
 
   return (
@@ -387,7 +503,15 @@ export default function AttendancePage() {
               <CardDescription>Register your entry and exit times today.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center py-6 text-center">
-              {!todayLog ? (
+              {todayLog?.status === 'leave' ? (
+                <>
+                  <div className="w-16 h-16 rounded-full bg-violet-50 flex items-center justify-center text-violet-600 mb-4">
+                    <span className="h-4 w-4 bg-violet-600 rounded-full" />
+                  </div>
+                  <h3 className="font-semibold text-lg text-violet-700">On Leave</h3>
+                  <p className="text-xs text-slate-500 mt-1 mb-6">Your admin marked today as leave. Clock-in is not required.</p>
+                </>
+              ) : !todayLog ? (
                 <>
                   <div className="w-16 h-16 rounded-full bg-cyan-50 flex items-center justify-center text-cyan-600 mb-4 animate-pulse">
                     <span className="h-4 w-4 bg-cyan-600 rounded-full" />
@@ -457,9 +581,7 @@ export default function AttendancePage() {
                           <td className="py-3">{formatTime(log.logoutTimestamp)}</td>
                           <td className="py-3 text-slate-500">{calculateHours(log.loginTimestamp, log.logoutTimestamp)}</td>
                           <td className="py-3">
-                            <Badge variant={log.status === 'on-time' ? 'default' : 'secondary'}>
-                              {log.status}
-                            </Badge>
+                            {statusBadge(log.status)}
                           </td>
                         </tr>
                       ))}
@@ -539,7 +661,7 @@ export default function AttendancePage() {
             <Card className="shadow-md border-slate-200 p-4 mb-4">
               <CardHeader className="p-0 pb-3">
                 <CardTitle className="text-base">Holiday Calendar</CardTitle>
-                <CardDescription>Manage official holidays. Attendance on these days can be cross-referenced.</CardDescription>
+                <CardDescription>Manage official holidays. No-shows on these days show as Holiday, not Absent.</CardDescription>
               </CardHeader>
               <CardContent className="p-0 space-y-4">
                 {/* Add Holiday Form */}
@@ -612,11 +734,19 @@ export default function AttendancePage() {
           )}
 
           {/* Summary KPIs - Always in a Single Row */}
+          {selectedDateIsHoliday && (
+            <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+              {selectedHolidayName} — employees without a clock-in are counted as Holiday, not Absent.
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             {[
               { label: 'On Time Present', value: adminStats.onTime, variant: 'default' as const, color: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
               { label: 'Late Present', value: adminStats.late, variant: 'secondary' as const, color: 'text-amber-700 bg-amber-50 border-amber-100' },
-              { label: 'Absent Today', value: adminStats.absent, variant: 'destructive' as const, color: 'text-red-700 bg-red-50 border-red-100' }
+              { label: 'On Leave', value: adminStats.leave, variant: 'secondary' as const, color: 'text-violet-700 bg-violet-50 border-violet-100' },
+              selectedDateIsHoliday
+                ? { label: 'Holiday', value: adminStats.holiday, variant: 'secondary' as const, color: 'text-sky-700 bg-sky-50 border-sky-100' }
+                : { label: 'Absent', value: adminStats.absent, variant: 'destructive' as const, color: 'text-red-700 bg-red-50 border-red-100' },
             ].map(({ label, value, variant, color }) => (
               <div key={label} className={`flex-1 border rounded-2xl p-5 shadow-sm flex flex-col justify-between ${color}`}>
                 <div>
@@ -669,10 +799,19 @@ export default function AttendancePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {adminEmployeeTableData.map(({ user, record }) => (
+                      {adminEmployeeTableData.map(({ user, record }) => {
+                        const name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email
+                        return (
                         <tr key={user.id}>
                           <td className="py-3 font-semibold">
-                            {user.firstName} {user.lastName}
+                            <button
+                              type="button"
+                              onClick={() => setAnalyticsUser({ id: user.id, name })}
+                              className="text-left hover:text-primary hover:underline"
+                              title="View attendance analytics"
+                            >
+                              {user.firstName} {user.lastName}
+                            </button>
                             <span className="block font-normal text-xs text-slate-400 font-mono mt-0.5">{user.email}</span>
                           </td>
                           <td className="py-3">{record ? formatTime(record.loginTimestamp) : '—'}</td>
@@ -682,37 +821,68 @@ export default function AttendancePage() {
                           </td>
                           <td className="py-3">
                             {record ? (
-                              <Badge variant={record.status === 'on-time' ? 'default' : 'secondary'}>
-                                {record.status}
-                              </Badge>
+                              statusBadge(record.status)
+                            ) : selectedDateIsHoliday ? (
+                              <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700">
+                                Holiday
+                              </span>
                             ) : (
                               <Badge variant="destructive">Absent</Badge>
                             )}
                           </td>
                           <td className="py-3 text-right">
-                            {record ? (
-                              <>
-                                <Button variant="ghost" size="sm" onClick={() => handleEditClick(record)}>
-                                  Edit
-                                </Button>
+                            <div className="inline-flex flex-wrap items-center justify-end gap-1">
+                              {record?.status === 'leave' ? (
                                 <Button
-                                  variant="destructive"
+                                  variant="secondary"
                                   size="sm"
-                                  onClick={() => {
-                                    setDeleteLogId(record.id)
-                                    setDeleteConfirmOpen(true)
-                                  }}
-                                  className="ml-2"
+                                  onClick={() =>
+                                    setLeaveConfirm({ userId: user.id, name, mode: 'clear' })
+                                  }
                                 >
-                                  Delete
+                                  Clear leave
                                 </Button>
-                              </>
-                            ) : (
-                              <span className="text-xs text-slate-300 italic">No record</span>
-                            )}
+                              ) : !selectedDateIsHoliday ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() =>
+                                    setLeaveConfirm({
+                                      userId: user.id,
+                                      name,
+                                      mode: 'mark',
+                                      forceOverwrite: Boolean(record),
+                                    })
+                                  }
+                                >
+                                  Mark leave
+                                </Button>
+                              ) : null}
+                              {record && record.status !== 'leave' ? (
+                                <>
+                                  <Button variant="ghost" size="sm" onClick={() => handleEditClick(record)}>
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      setDeleteLogId(record.id)
+                                      setDeleteConfirmOpen(true)
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </>
+                              ) : null}
+                              {!record && selectedDateIsHoliday ? (
+                                <span className="text-xs text-slate-300 italic">Holiday</span>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -743,22 +913,104 @@ export default function AttendancePage() {
             <Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} required />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Clock In Timestamp *</label>
-            <Input type="datetime-local" value={editLogin} onChange={(e) => setEditLogin(e.target.value)} required />
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              Clock In Timestamp {editStatus === 'leave' ? '(not used for leave)' : '*'}
+            </label>
+            <Input
+              type="datetime-local"
+              value={editLogin}
+              onChange={(e) => setEditLogin(e.target.value)}
+              required={editStatus !== 'leave'}
+              disabled={editStatus === 'leave'}
+            />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Clock Out Timestamp (optional)</label>
-            <Input type="datetime-local" value={editLogout} onChange={(e) => setEditLogout(e.target.value)} />
+            <Input
+              type="datetime-local"
+              value={editLogout}
+              onChange={(e) => setEditLogout(e.target.value)}
+              disabled={editStatus === 'leave'}
+            />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Evaluation Status</label>
             <Select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
               <option value="on-time">on-time</option>
               <option value="late">late</option>
+              <option value="leave">leave</option>
             </Select>
           </div>
         </form>
       </Modal>
+
+      {/* ─────────────────────────────── LEAVE CONFIRM MODAL ─────────────────────────────── */}
+      <Modal
+        open={Boolean(leaveConfirm)}
+        onClose={() => {
+          if (!leaveLoading) setLeaveConfirm(null)
+        }}
+        title={
+          leaveConfirm?.mode === 'clear'
+            ? 'Clear leave'
+            : leaveConfirm?.forceOverwrite
+              ? 'Overwrite as leave'
+              : 'Mark leave'
+        }
+        description={
+          leaveConfirm?.mode === 'clear'
+            ? 'Remove the leave mark for this day.'
+            : leaveConfirm?.forceOverwrite
+              ? 'An existing attendance record will be replaced with leave.'
+              : 'Mark this employee as on leave for the selected date.'
+        }
+        size="sm"
+        closeOnBackdropClick={!leaveLoading}
+        closeOnEsc={!leaveLoading}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setLeaveConfirm(null)} disabled={leaveLoading}>
+              Cancel
+            </Button>
+            <Button
+              variant={leaveConfirm?.mode === 'clear' ? 'default' : 'destructive'}
+              onClick={() => void executeLeaveAction()}
+              disabled={leaveLoading}
+            >
+              {leaveLoading
+                ? 'Saving…'
+                : leaveConfirm?.mode === 'clear'
+                  ? 'Clear leave'
+                  : leaveConfirm?.forceOverwrite
+                    ? 'Overwrite as leave'
+                    : 'Mark leave'}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          {leaveConfirm?.mode === 'clear' ? (
+            <>
+              Clear leave for <span className="font-medium text-foreground">{leaveConfirm?.name}</span> on{' '}
+              {new Date(`${selectedDate}T00:00:00.000Z`).toLocaleDateString('en-GB', { dateStyle: 'long' })}?
+            </>
+          ) : (
+            <>
+              Mark <span className="font-medium text-foreground">{leaveConfirm?.name}</span> as on leave for{' '}
+              {new Date(`${selectedDate}T00:00:00.000Z`).toLocaleDateString('en-GB', { dateStyle: 'long' })}?
+              {leaveConfirm?.forceOverwrite ? ' Their clock-in record for this day will be removed.' : null}
+            </>
+          )}
+        </p>
+      </Modal>
+
+      {/* ─────────────────────────────── EMPLOYEE ANALYTICS MODAL ─────────────────────────────── */}
+      <EmployeeAttendanceAnalyticsModal
+        open={Boolean(analyticsUser)}
+        userId={analyticsUser?.id ?? null}
+        userName={analyticsUser?.name}
+        onClose={() => setAnalyticsUser(null)}
+      />
 
       {/* ─────────────────────────────── DELETE CONFIRM MODAL ─────────────────────────────── */}
       <Modal
@@ -796,7 +1048,7 @@ export default function AttendancePage() {
         <div className="space-y-2 text-sm text-slate-600">
           <p>This operation will:</p>
           <ul className="list-disc pl-4 space-y-1">
-            <li>Compute and save monthly attendance summaries for all employees</li>
+            <li>Compute and save monthly attendance summaries (on-time, late, leave, holiday days, hours)</li>
             <li>Permanently delete detailed daily logs older than 2 months</li>
           </ul>
           <p className="text-rose-600 font-medium mt-3">⚠ This action cannot be undone.</p>

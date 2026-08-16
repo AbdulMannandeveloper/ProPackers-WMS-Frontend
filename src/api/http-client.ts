@@ -17,14 +17,10 @@ const handleGlobalHttpError = (_error: AxiosError): void => {
 
 AXIOS_INSTANCE.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
-  const userId = useAuthStore.getState().userId
 
   if (token) {
     config.headers = config.headers ?? {}
-    config.headers.Authorization = `Token ${token}`
-    if (userId) {
-      config.headers['x-user-id'] = userId
-    }
+    config.headers.Authorization = `Bearer ${token}`
   }
 
   return config
@@ -34,6 +30,11 @@ AXIOS_INSTANCE.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     const status = error.response?.status
+
+    // Clear a stale/invalid session so the app falls back to the login screen.
+    if (status === 401 && useAuthStore.getState().token) {
+      useAuthStore.getState().logout()
+    }
 
     const shouldHandleGlobally =
       status === undefined || [500, 502, 503, 504].includes(status)

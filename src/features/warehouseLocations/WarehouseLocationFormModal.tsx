@@ -9,9 +9,11 @@ interface Props {
   classes: WarehouseLocationClass[]
   locations: WarehouseLocation[]
   initial?: WarehouseLocation | null
+  /** Pre-seeds parent + matching child class when adding from the explorer. */
+  defaultParentId?: string | null
 }
 
-export default function WarehouseLocationFormModal({ open, onClose, onSave, classes, locations, initial }: Props) {
+export default function WarehouseLocationFormModal({ open, onClose, onSave, classes, locations, initial, defaultParentId }: Props) {
   const [locationName, setLocationName] = useState('')
   const [locationClassId, setLocationClassId] = useState('')
   const [parentLocationId, setParentLocationId] = useState('')
@@ -32,12 +34,19 @@ export default function WarehouseLocationFormModal({ open, onClose, onSave, clas
       setLocationName(initial.locationName || '')
       setLocationClassId(initial.locationClassId || '')
       setParentLocationId(initial.parentLocationId || '')
-    } else {
-      setLocationName('')
-      setLocationClassId(classes[0]?.id || '')
-      setParentLocationId('')
+      return
     }
-  }, [initial, open, classes])
+
+    setLocationName('')
+
+    const parent = defaultParentId ? locations.find((loc) => loc.id === defaultParentId) : null
+    const childClass = parent
+      ? classes.find((c) => c.parentClassId === parent.locationClassId)
+      : null
+
+    setLocationClassId(childClass?.id || classes[0]?.id || '')
+    setParentLocationId(childClass ? parent!.id : '')
+  }, [initial, open, classes, locations, defaultParentId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -34,7 +34,7 @@ export const useAuthStore = create<AuthState>()(
               const todayLog = logs.find(
                 (l: any) => l.date && l.date.split('T')[0] === todayStr
               )
-              if (todayLog) {
+              if (todayLog && todayLog.status !== 'leave' && todayLog.loginTimestamp) {
                 AXIOS_INSTANCE.put(`/api/attendance/${todayLog.id}/logout`, {
                   logoutTimestamp: new Date().toISOString(),
                 }).catch(() => {})

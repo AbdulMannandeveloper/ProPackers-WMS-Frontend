@@ -5,7 +5,17 @@ const BASE = '/api/auth'
 export const login = (payload: { identifier: string; password: string }): Promise<{ userId: string }> =>
   httpClient({ method: 'POST', url: `${BASE}/login`, data: payload })
 
-export const verifyOtp = (payload: { userId: string; otp: string }): Promise<{ verified: boolean; userId: string }> =>
+export const verifyOtp = (payload: { userId: string; otp: string }): Promise<{
+  verified: boolean
+  token: string
+  userId: string
+  firstName?: string
+  lastName?: string
+  username?: string | null
+  email?: string
+  role?: string
+  isActive?: boolean
+}> =>
   httpClient({ method: 'POST', url: `${BASE}/verify-otp`, data: payload })
 
 export const requestAdminSignupOtp = (
