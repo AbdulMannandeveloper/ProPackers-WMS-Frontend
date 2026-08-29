@@ -6,11 +6,13 @@ import {
   stock as stockApi,
   employees as employeesApi,
   clients as clientsApi,
+  clientServices as clientServicesApi,
 } from '@/api'
 import type { Shipment } from '@/api/shipments'
 import type { Product } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
 import type { Employee, Client } from '@/api/types'
+import type { ClientServiceRate } from '@/api/clientServices'
 import {
   Button,
   Card,
@@ -64,6 +66,10 @@ export default function ShipmentsPage() {
   const [formPackagingType, setFormPackagingType] = useState('Box')
   const [formCourierName, setFormCourierName] = useState('DPD')
   const [formItems, setFormItems] = useState<{ productId: string; sourceLocationId: string; quantity: number }[]>([])
+  // Billable services. Admin-only: the API refuses them from an employee, matching
+  // the admin-only /services endpoints.
+  const [clientRates, setClientRates] = useState<ClientServiceRate[]>([])
+  const [formServices, setFormServices] = useState<{ serviceId: string; quantity: number }[]>([])
   const [saving, setSaving] = useState(false)
 
   // Load All Core WMS Components
@@ -94,6 +100,50 @@ export default function ShipmentsPage() {
     void loadData()
   }, [])
 
+  // The rates agreed with the selected client. Only these can be billed, so the
+  // picker offers exactly what the server will accept.
+  useEffect(() => {
+    if (!isAdmin || !formClientId) {
+      setClientRates([])
+      return
+    }
+    let cancelled = false
+    clientServicesApi
+      .getClientServicesByClientId(formClientId)
+      .then((rows) => { if (!cancelled) setClientRates(rows) })
+      .catch(() => { if (!cancelled) setClientRates([]) })
+    return () => { cancelled = true }
+  }, [formClientId, isAdmin])
+
+  // Changing client invalidates any services already chosen at the old client's rates.
+  useEffect(() => {
+    setFormServices([])
+  }, [formClientId])
+
+  const handleAddServiceRow = () => {
+    const unused = clientRates.filter(
+      (r) => !formServices.some((s) => s.serviceId === r.serviceId)
+    )
+    if (unused.length === 0) {
+      showToast('No further services are set up for this client.', 'error')
+      return
+    }
+    setFormServices((prev) => [...prev, { serviceId: unused[0].serviceId, quantity: 1 }])
+  }
+
+  const handleRemoveServiceRow = (idx: number) => {
+    setFormServices((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const handleServiceRowChange = (idx: number, field: 'serviceId' | 'quantity', value: any) => {
+    setFormServices((prev) =>
+      prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+    )
+  }
+
+  const rateFor = (serviceId: string) =>
+    Number(clientRates.find((r) => r.serviceId === serviceId)?.chargedPrice ?? 0)
+
   // Open Create Modal & Initialize
   const handleOpenCreateModal = () => {
     if (clients.length === 0 || employees.length === 0) {
@@ -106,6 +156,7 @@ export default function ShipmentsPage() {
     setFormPackagingType('Box')
     setFormCourierName('DPD')
     setFormItems([])
+    setFormServices([])
     setCreateModalOpen(true)
   }
 
@@ -189,6 +240,14 @@ export default function ShipmentsPage() {
           sourceLocationId: item.sourceLocationId,
           quantity: item.quantity,
         })),
+        ...(formServices.length > 0
+          ? {
+              shipmentServices: formServices.map((s) => ({
+                serviceId: s.serviceId,
+                quantity: s.quantity,
+              })),
+            }
+          : {}),
       }
 
       await shipmentsApi.createShipment(payload)
@@ -637,6 +696,98 @@ export default function ShipmentsPage() {
               </div>
             )}
           </div>
+
+          {/* Billable services. Admin-only: the API refuses them from an employee,
+              matching the admin-only /services endpoints. Only rates already
+              agreed with this client are offered, because those are the only ones
+              the server will accept. */}
+          {isAdmin && (
+            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  Billable Services
+                </h3>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleAddServiceRow}
+                  disabled={clientRates.length === 0}
+                >
+                  + Add Service
+                </Button>
+              </div>
+
+              {clientRates.length === 0 ? (
+                <div className="text-center py-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 text-sm">
+                  No agreed rates for this client. Set them up under Clients &rarr; Services first.
+                </div>
+              ) : formServices.length === 0 ? (
+                <div className="text-center py-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 text-sm">
+                  No services added. These are billed to the client on dispatch.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {formServices.map((row, idx) => {
+                    const rate = rateFor(row.serviceId)
+                    return (
+                      <div
+                        key={`svc-${idx}`}
+                        className="grid grid-cols-12 gap-2 items-end bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800"
+                      >
+                        <div className="col-span-6">
+                          <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                            Service
+                          </label>
+                          <Select
+                            value={row.serviceId}
+                            onChange={(e) => handleServiceRowChange(idx, 'serviceId', e.target.value)}
+                          >
+                            {clientRates.map((r) => (
+                              <option key={r.id} value={r.serviceId}>
+                                {r.service?.description ?? r.serviceId}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                            Qty
+                          </label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={row.quantity}
+                            onChange={(e) =>
+                              handleServiceRowChange(idx, 'quantity', Number(e.target.value))
+                            }
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                            Charge
+                          </label>
+                          <div className="h-9 flex items-center text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                            &pound;{(rate * (row.quantity || 0)).toFixed(2)}
+                          </div>
+                        </div>
+                        <div className="col-span-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRemoveServiceRow(idx)}
+                          >
+                            &times;
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </form>
       </Modal>
 

@@ -7,10 +7,27 @@ export const addClientService = (payload: { clientId: string; serviceId: string;
 
 export const getAllClientServices = () => httpClient({ method: 'GET', url: `${BASE}/` })
 
-export const getClientServicesByClientId = async (clientId: string) => {
-  const all = await getAllClientServices()
-  if (!Array.isArray(all)) return []
-  return all.filter((entry: any) => entry?.clientId === clientId)
+export type ClientServiceRate = {
+  id: string
+  clientId: string
+  serviceId: string
+  chargedPrice: number | string
+  unit?: string
+  service?: { id: string; description: string; unit: string }
+}
+
+/**
+ * The rates agreed with one client. Hits the dedicated endpoint rather than
+ * pulling every client's rates and filtering in the browser.
+ */
+export const getClientServicesByClientId = async (
+  clientId: string
+): Promise<ClientServiceRate[]> => {
+  const rows = await httpClient<ClientServiceRate[]>({
+    method: 'GET',
+    url: `${BASE}/client/${clientId}`,
+  })
+  return Array.isArray(rows) ? rows : []
 }
 
 export const getClientServicesByServiceId = async (serviceId: string) => {
