@@ -3,6 +3,7 @@ import { Fragment } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
 
 import { ProtectedRoute } from '@/protected-route'
+import { ErrorBoundary } from '@/error-boundary'
 import AuthLayout from '@/layouts/auth/layout'
 import { homeRoutes } from '@/routes/home.tsx'
 import { authRoutes } from '@/routes/auth'
@@ -18,7 +19,8 @@ function App() {
   const ClientLayout = clientRoutes.layout ?? Fragment
 
   return (
-    <BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
       <Routes>
         <Route
           path="/admin-signup"
@@ -41,7 +43,6 @@ function App() {
               path={`${authRoutes.basePath}${route.path}`}
               element={
                 <ProtectedRoute
-                  permissions={route.permissions}
                   requireAuth={route.requireAuth}
                   allowedRoles={route.allowedRoles}
                 >
@@ -65,7 +66,6 @@ function App() {
               path={`${appRoutes.basePath}${route.path}`}
               element={
                 <ProtectedRoute
-                  permissions={route.permissions}
                   requireAuth={route.requireAuth}
                   allowedRoles={route.allowedRoles}
                 >
@@ -89,7 +89,6 @@ function App() {
               path={`${clientRoutes.basePath}${route.path}`}
               element={
                 <ProtectedRoute
-                  permissions={route.permissions}
                   requireAuth={route.requireAuth}
                   allowedRoles={route.allowedRoles}
                 >
@@ -113,7 +112,6 @@ function App() {
               path={`${homeRoutes.basePath}${route.path}`}
               element={
                 <ProtectedRoute
-                  permissions={route.permissions}
                   requireAuth={route.requireAuth}
                   allowedRoles={route.allowedRoles}
                 >
@@ -129,7 +127,7 @@ function App() {
         <Route
           path="/app/*"
           element={
-            <ProtectedRoute permissions={[]} requireAuth allowedRoles={['admin', 'employee']}>
+            <ProtectedRoute requireAuth allowedRoles={['admin', 'employee']}>
               <AppLayout>
                 <NotFound404 />
               </AppLayout>
@@ -140,7 +138,7 @@ function App() {
         <Route
           path="/client/*"
           element={
-            <ProtectedRoute permissions={[]} requireAuth allowedRoles={['client']}>
+            <ProtectedRoute requireAuth allowedRoles={['client']}>
               <ClientLayout>
                 <NotFound404 />
               </ClientLayout>
@@ -155,7 +153,8 @@ function App() {
         <Route path="*" element={<NotFound404 />} />
         {/* More routes go here like auth routes, error routes, etc. */}
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 

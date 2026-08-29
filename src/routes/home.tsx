@@ -13,7 +13,6 @@ export const homeRoutes: RouteGroup = {
       path: '',
       element: RedirectToLogin,
       title: 'Home',
-      permissions: [],
       requireAuth: false,
     },
   ],

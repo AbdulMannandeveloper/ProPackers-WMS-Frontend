@@ -11,7 +11,6 @@ export const clientRoutes: RouteGroup = {
       path: '/',
       element: ClientPortalPage,
       title: 'Client Portal',
-      permissions: [],
       requireAuth: true,
       allowedRoles: ['client'],
     },

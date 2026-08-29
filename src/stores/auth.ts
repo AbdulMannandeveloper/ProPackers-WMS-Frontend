@@ -3,13 +3,11 @@ import { persist } from 'zustand/middleware'
 import { AXIOS_INSTANCE } from '@/api/http-client'
 
 interface AuthState {
-  permissions: string[]
   token: string | null
   userId?: string | null
   role?: string | null
   displayName?: string | null
   logout: () => void
-  setPermissions: (permissions: string[]) => void
   setToken: (token: string | null) => void
   setUserId: (id: string | null) => void
   setRole: (role: string | null) => void
@@ -19,7 +17,6 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      permissions: [],
       token: null,
       userId: null,
       role: null,
@@ -44,14 +41,12 @@ export const useAuthStore = create<AuthState>()(
         }
 
         set({
-          permissions: [],
-          token: null,
+              token: null,
           userId: null,
           role: null,
           displayName: null,
         })
       },
-      setPermissions: (permissions: string[]) => set({ permissions }),
       setToken: (token: string | null) => set({ token }),
       setUserId: (id: string | null) => set({ userId: id }),
       setRole: (role: string | null) => set({ role }),
