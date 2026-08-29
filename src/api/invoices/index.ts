@@ -66,6 +66,13 @@ export const markInvoicePaid = (
 ): Promise<MonthlyInvoice> =>
   httpClient({ method: 'POST', url: `${BASE}/${id}/pay`, data: payload })
 
+/**
+ * The stored invoice PDF, rendered once at approval so it is a fixed record of
+ * what the client was billed rather than a fresh render of current figures.
+ */
+export const downloadInvoicePdf = async (id: string): Promise<Blob> =>
+  httpClient({ method: 'GET', url: `${BASE}/${id}/pdf`, responseType: 'blob' })
+
 export const approveInvoice = (id: string): Promise<MonthlyInvoice> =>
   httpClient({ method: 'POST', url: `${BASE}/${id}/approve` })
 
@@ -96,6 +103,7 @@ export default {
   createInvoice,
   approveInvoice,
   markInvoicePaid,
+  downloadInvoicePdf,
   deleteInvoice,
   getLineItems,
   createLineItem,

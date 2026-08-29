@@ -25,8 +25,6 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 
 type ClientRecord = {
   id: string
@@ -154,82 +152,34 @@ export default function ClientPortalPage() {
   }
 
   // US-097: Download invoice PDF
+  // US-097: Download invoice PDF.
+  //
+  // The document is rendered and stored server-side when the invoice is
+  // approved, so what downloads here is the invoice as it was issued. This used
+  // to be rebuilt in the browser on every view, which meant a change to any
+  // figure silently redrew the "old" invoice with the new one.
   const handleDownloadInvoicePDF = async (invoice: MonthlyInvoice) => {
-    const doc = new jsPDF()
-
-    // Load logo
     try {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      await new Promise<void>((resolve) => {
-        img.onload = () => {
-          doc.addImage(img, 'PNG', 14, 10, 30, 30)
-          resolve()
-        }
-        img.onerror = () => resolve()
-        img.src = '/Logo.png'
-      })
-    } catch {
-      // skip logo
+      const blob = await invoicesApi.downloadInvoicePdf(invoice.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `ProPackers_Invoice_${invoice.id.slice(0, 8).toUpperCase()}_${new Date(
+        invoice.billingPeriod
+      )
+        .toISOString()
+        .slice(0, 7)}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      showToast('Invoice PDF downloaded.')
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.error || err?.message || 'Could not download the invoice PDF.',
+        'error'
+      )
     }
-
-    doc.setFontSize(18)
-    doc.setTextColor(15, 23, 42)
-    doc.text('ProPackers UK', 50, 22)
-    doc.setFontSize(10)
-    doc.setTextColor(100, 116, 139)
-    doc.text('Warehouse Management Services', 50, 28)
-
-    doc.setFontSize(14)
-    doc.setTextColor(15, 23, 42)
-    doc.text('INVOICE', 14, 52)
-
-    doc.setFontSize(10)
-    doc.setTextColor(71, 85, 105)
-    const detailY = 60
-    doc.text(`Invoice ID: ${invoice.id.slice(0, 8).toUpperCase()}`, 14, detailY)
-    doc.text(`Client: ${invoice.client?.companyName || myClient?.companyName || '—'}`, 14, detailY + 6)
-    doc.text(`Billing Period: ${new Date(invoice.billingPeriod).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}`, 14, detailY + 12)
-    doc.text(`Status: ${invoice.status}`, 14, detailY + 18)
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, detailY + 24)
-
-    // Line items
-    let items = invoice.lineItems || []
-    if (items.length === 0) {
-      try {
-        const fetched = await invoicesApi.getLineItems(invoice.id)
-        items = Array.isArray(fetched) ? fetched : []
-      } catch {
-        // use empty
-      }
-    }
-
-    autoTable(doc, {
-      startY: detailY + 32,
-      head: [['Description', 'Type', 'Date', 'Qty', 'Unit Price (£)', 'Total (£)']],
-      body: items.map((li) => [
-        li.description,
-        li.itemType === 'AUTOMATED_SERVICE' ? 'Auto' : 'Manual',
-        li.dateOfService ? new Date(li.dateOfService).toLocaleDateString() : '—',
-        String(li.quantity),
-        Number(li.unitPrice).toFixed(2),
-        Number(li.totalPrice).toFixed(2),
-      ]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [15, 118, 110] },
-    })
-
-    const finalY = (doc as any).lastAutoTable?.finalY || 120
-    doc.setFontSize(12)
-    doc.setTextColor(15, 23, 42)
-    doc.text(`Total Amount: £${Number(invoice.totalAmount).toFixed(2)}`, 14, finalY + 10)
-
-    doc.setFontSize(8)
-    doc.setTextColor(148, 163, 184)
-    doc.text('ProPackers UK — Warehouse Management Services | This is a system-generated invoice.', 14, 285)
-
-    doc.save(`ProPackers_Invoice_${invoice.id.slice(0, 8).toUpperCase()}_${new Date(invoice.billingPeriod).toISOString().slice(0, 7)}.pdf`)
-    showToast('Invoice PDF downloaded.')
   }
 
   // Memoized KPIs

@@ -135,6 +135,30 @@ export default function InvoicesPage() {
     }
   }
 
+  // The stored document, as issued. Available once approved.
+  const handleDownloadPdf = async (invoice: MonthlyInvoice) => {
+    try {
+      const blob = await invoicesApi.downloadInvoicePdf(invoice.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `ProPackers_Invoice_${invoice.id.slice(0, 8).toUpperCase()}_${new Date(
+        invoice.billingPeriod
+      )
+        .toISOString()
+        .slice(0, 7)}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.error || err?.message || 'Could not download the invoice PDF.',
+        'error'
+      )
+    }
+  }
+
   const handleApprove = async () => {
     if (!selectedInvoice) return
     try {
@@ -431,6 +455,11 @@ export default function InvoicesPage() {
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setDetailModalOpen(false)}>Close</Button>
+              {selectedInvoice && selectedInvoice.status !== 'DRAFT' && (
+                <Button variant="secondary" onClick={() => handleDownloadPdf(selectedInvoice)}>
+                  Download PDF
+                </Button>
+              )}
               {isAdmin && selectedInvoice?.status === 'DRAFT' && (
                 <Button onClick={() => setManualChargeModalOpen(true)} variant="secondary">
                   + Add Manual Charge
