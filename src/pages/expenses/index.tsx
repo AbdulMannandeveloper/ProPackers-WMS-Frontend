@@ -15,7 +15,7 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
-import { Receipt, Plus, X, FileText, Image } from 'lucide-react'
+import { X, Image } from 'lucide-react'
 
 const fmt = (n: number | string) =>
   `£${Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -37,7 +37,7 @@ export default function ExpensesPage() {
   // Data States
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
-  const [loading, setLoading] = useState(false)
+  const [, setLoading] = useState(false)
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState('All')

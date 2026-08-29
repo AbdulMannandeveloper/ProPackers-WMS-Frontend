@@ -65,7 +65,7 @@ export default function ClientPortalPage() {
   const [lineItemsLoading, setLineItemsLoading] = useState(false)
 
   // Ledger (US-063)
-  const [ledgers, setLedgers] = useState<InventoryLedgerEntry[]>([])
+  const [, setLedgers] = useState<InventoryLedgerEntry[]>([])
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)

@@ -11,7 +11,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
   CardFooter,
 } from '@/components/Shared Components'
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, Download, ArrowUpRight, ArrowDownRight } from 'lucide-react'
@@ -26,7 +25,7 @@ export default function PLPage() {
   const [trends, setTrends] = useState<PLTrend[]>([])
   const [clientRevenues, setClientRevenues] = useState<ClientProfitability[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
-  const [loading, setLoading] = useState(false)
+  const [, setLoading] = useState(false)
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)

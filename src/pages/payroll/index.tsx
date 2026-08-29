@@ -4,7 +4,7 @@ import {
   payroll as payrollApi,
   employees as employeesApi,
 } from '@/api'
-import type { SalaryBreakdown, Fine } from '@/api/payroll'
+import type { SalaryBreakdown } from '@/api/payroll'
 import {
   Button,
   Card,
@@ -18,7 +18,7 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
-import { Banknote, TrendingDown, TrendingUp, Plus, X, RotateCcw, ShieldAlert, Award } from 'lucide-react'
+import { Banknote, TrendingDown, TrendingUp, RotateCcw, ShieldAlert, Award } from 'lucide-react'
 
 const fmt = (n: number | string) =>
   `£${Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -37,7 +37,6 @@ const getMonthOptions = () => {
 
 export default function PayrollPage() {
   const role = useAuthStore((s) => s.role)
-  const currentUserId = useAuthStore((s) => s.userId)
   const isAdmin = role === 'admin'
 
   const monthOptions = useMemo(() => getMonthOptions(), [])
@@ -46,7 +45,7 @@ export default function PayrollPage() {
   // Data
   const [payrollSummary, setPayrollSummary] = useState<SalaryBreakdown[]>([])
   const [employeeRecord, setEmployeeRecord] = useState<SalaryBreakdown | null>(null)
-  const [allEmployees, setAllEmployees] = useState<any[]>([])
+  const [, setAllEmployees] = useState<any[]>([])
   const [activeFineRule, setActiveFineRule] = useState<any>(null)
   const [loading, setLoading] = useState(false)
 
@@ -370,7 +369,6 @@ export default function PayrollPage() {
                       </tr>
                     ) : (
                       payrollSummary.map((record) => {
-                        const originalEmp = allEmployees.find((e) => e.userId === record.userId)
                         return (
                           <tr key={record.userId} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30">
                             <td className="py-4 font-medium">
