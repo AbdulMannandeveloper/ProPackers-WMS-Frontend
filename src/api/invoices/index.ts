@@ -30,6 +30,9 @@ export type MonthlyInvoice = {
   totalAmount: number | string
   status: InvoiceStatus
   pdfLink?: string | null
+  paidAt?: string | null
+  paymentMethod?: string | null
+  paymentReference?: string | null
   createdAt: string
   updatedAt: string
   approvedAt?: string | null
@@ -55,6 +58,13 @@ export const getInvoiceById = (id: string): Promise<MonthlyInvoice> =>
 
 export const createInvoice = (payload: { clientId: string }): Promise<MonthlyInvoice> =>
   httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
+
+/** APPROVED -> PAID. Method and reference are optional but worth capturing. */
+export const markInvoicePaid = (
+  id: string,
+  payload: { paymentMethod?: string; paymentReference?: string } = {}
+): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/pay`, data: payload })
 
 export const approveInvoice = (id: string): Promise<MonthlyInvoice> =>
   httpClient({ method: 'POST', url: `${BASE}/${id}/approve` })
@@ -85,6 +95,7 @@ export default {
   getInvoiceById,
   createInvoice,
   approveInvoice,
+  markInvoicePaid,
   deleteInvoice,
   getLineItems,
   createLineItem,

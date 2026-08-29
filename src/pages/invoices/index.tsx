@@ -100,6 +100,7 @@ export default function InvoicesPage() {
 
   const draftCount = useMemo(() => allInvoices.filter((i) => i.status === 'DRAFT').length, [allInvoices])
   const approvedCount = useMemo(() => allInvoices.filter((i) => i.status === 'APPROVED').length, [allInvoices])
+  const paidCount = useMemo(() => allInvoices.filter((i) => i.status === 'PAID').length, [allInvoices])
   const totalRevenue = useMemo(
     () => allInvoices.filter((i) => i.status !== 'DRAFT').reduce((acc, i) => acc + Number(i.totalAmount), 0),
     [allInvoices]
@@ -109,6 +110,29 @@ export default function InvoicesPage() {
   const handleOpenDetail = (inv: MonthlyInvoice) => {
     setSelectedInvoice(inv)
     setDetailModalOpen(true)
+  }
+
+  // Payment capture. Optional detail, but it is the first thing anyone asks for
+  // when a payment is queried, so it is prompted for rather than assumed.
+  const [payModalOpen, setPayModalOpen] = useState(false)
+  const [payMethod, setPayMethod] = useState('BACS')
+  const [payReference, setPayReference] = useState('')
+
+  const handleMarkPaid = async () => {
+    if (!selectedInvoice) return
+    try {
+      await invoicesApi.markInvoicePaid(selectedInvoice.id, {
+        paymentMethod: payMethod || undefined,
+        paymentReference: payReference || undefined,
+      })
+      showToast('Invoice marked as paid.')
+      setPayModalOpen(false)
+      setDetailModalOpen(false)
+      setPayReference('')
+      await loadData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Failed to mark invoice paid.', 'error')
+    }
   }
 
   const handleApprove = async () => {
@@ -262,6 +286,13 @@ export default function InvoicesPage() {
             dot: 'bg-emerald-400',
           },
           {
+            label: 'Paid Invoices',
+            value: paidCount,
+            sub: 'Settled',
+            color: 'text-teal-700 bg-teal-50 border-teal-100 dark:bg-teal-950/30 dark:border-teal-900 dark:text-teal-300',
+            dot: 'bg-teal-400',
+          },
+          {
             label: 'Total Billed Revenue',
             value: fmt(totalRevenue),
             sub: 'Approved + Paid invoices',
@@ -408,6 +439,11 @@ export default function InvoicesPage() {
               {isAdmin && selectedInvoice?.status === 'DRAFT' && (
                 <Button onClick={handleApprove}>
                   Approve Invoice
+                </Button>
+              )}
+              {isAdmin && selectedInvoice?.status === 'APPROVED' && (
+                <Button onClick={() => setPayModalOpen(true)}>
+                  Mark as Paid
                 </Button>
               )}
             </div>
@@ -635,6 +671,51 @@ export default function InvoicesPage() {
           <strong className="text-rose-600">{selectedInvoice?.client?.companyName}</strong>{' '}
           for billing period <strong>{selectedInvoice ? fmtDate(selectedInvoice.billingPeriod) : ''}</strong>?
         </p>
+      </Modal>
+
+      {/* ───────────────────────────────── MODAL: RECORD PAYMENT ───────────────────────────────── */}
+      <Modal
+        open={payModalOpen}
+        onClose={() => setPayModalOpen(false)}
+        title="Record Payment"
+        description="Marks the invoice paid. The method and reference are what a payment query gets answered from later."
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPayModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleMarkPaid}>Confirm Payment</Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Recording payment of{' '}
+            <strong>{selectedInvoice ? fmt(Number(selectedInvoice.totalAmount)) : ''}</strong>{' '}
+            from <strong>{selectedInvoice?.client?.companyName}</strong>.
+          </p>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+              Method
+            </label>
+            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+              <option value="BACS">BACS</option>
+              <option value="Card">Card</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Cash">Cash</option>
+              <option value="Other">Other</option>
+            </Select>
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+              Reference <span className="normal-case text-slate-400">(optional)</span>
+            </label>
+            <Input
+              value={payReference}
+              onChange={(e) => setPayReference(e.target.value)}
+              placeholder="e.g. FT24019283"
+            />
+          </div>
+        </div>
       </Modal>
     </div>
   )
