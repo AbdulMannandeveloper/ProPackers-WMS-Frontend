@@ -1,12 +1,27 @@
 import httpClient from '../http-client'
 
+/**
+ * Mirrors the Postgres enums added in chunk 1.2. Status moves only through the
+ * transition endpoints below — the server rejects it on the generic update, so
+ * sending `{ status }` to updateShipment silently does nothing.
+ */
+export type ShipmentStatus =
+  | 'PENDING'
+  | 'READY_FOR_DISPATCH'
+  | 'DISPATCHED'
+  | 'CANCELLED'
+
+export type ShipmentItemStatus = 'PENDING' | 'PICKED'
+
 export type ShipmentItem = {
   id: string
   shipmentId: string
   productId: string
   sourceLocationId: string
   quantity: number
-  status: 'PENDING' | 'PICKED' | 'READY'
+  status: ShipmentItemStatus
+  /** Set when this line ships under its own consignment number. */
+  trackingId?: string | null
   product?: {
     id: string
     skuCode: string
@@ -40,9 +55,11 @@ export type Shipment = {
   employeeId: string
   clientId: string
   shipmentType: string
-  status: 'PENDING' | 'READY_FOR_DISPATCH' | 'DISPATCHED'
+  status: ShipmentStatus
   packagingType: string
   courierName: string
+  /** Courier consignment number. An item's own trackingId takes precedence. */
+  trackingId?: string | null
   createdAt: string
   client?: {
     id: string
@@ -88,21 +105,56 @@ export const createShipment = (payload: {
 }): Promise<Shipment> =>
   httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
 
-export const updateShipment = (id: string, payload: Partial<Shipment>): Promise<Shipment> =>
+/** Commercial and identity details. Admin only, and refused once dispatched. */
+export const updateShipment = (
+  id: string,
+  payload: {
+    shipmentType?: string
+    packagingType?: string
+    courierName?: string
+    trackingId?: string | null
+  }
+): Promise<Shipment> =>
   httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
 
+// ─── Lifecycle transitions ────────────────────────────────────────────────────
+// Each is guarded server-side against the state machine; an illegal hop comes
+// back as a 400 whose message names what is allowed from here.
+
+/** PENDING → READY_FOR_DISPATCH. Requires every item picked. Staff. */
+export const markShipmentReady = (id: string): Promise<Shipment> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/ready` })
+
+/** READY_FOR_DISPATCH → DISPATCHED. Staff. */
 export const dispatchShipment = (id: string): Promise<{ message: string }> =>
   httpClient({ method: 'POST', url: `${BASE}/${id}/dispatch` })
 
+/** → CANCELLED, releasing reserved stock. Admin only. */
+export const cancelShipment = (id: string, reason?: string): Promise<Shipment> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/cancel`, data: { reason } })
+
+/** READY_FOR_DISPATCH → PENDING, to correct a premature "ready". Admin only. */
+export const reopenShipment = (id: string): Promise<Shipment> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/reopen` })
+
+/** Admin only, and refused once dispatched — the ledger references it. */
 export const deleteShipment = (id: string): Promise<{ message: string }> =>
   httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
 
+// ─── Item transitions ─────────────────────────────────────────────────────────
+
+/** Line is off the shelf. Only while the shipment is still PENDING. Staff. */
+export const pickShipmentItem = (id: string): Promise<ShipmentItem> =>
+  httpClient({ method: 'PUT', url: `/api/shipment-items/${id}/pick` })
+
+/** Puts a line back, for a mis-scan. Staff. */
+export const unpickShipmentItem = (id: string): Promise<ShipmentItem> =>
+  httpClient({ method: 'PUT', url: `/api/shipment-items/${id}/unpick` })
+
+/** Quantity / location / tracking id. Admin only. Status is not settable here. */
 export const updateShipmentItem = (
   id: string,
-  payload: {
-    status?: 'PENDING' | 'PICKED' | 'READY'
-    quantity?: number
-  }
+  payload: { quantity?: number; trackingId?: string | null }
 ): Promise<ShipmentItem> =>
   httpClient({ method: 'PUT', url: `/api/shipment-items/${id}`, data: payload })
 
@@ -112,7 +164,12 @@ export default {
   getShipmentById,
   createShipment,
   updateShipment,
+  markShipmentReady,
   dispatchShipment,
+  cancelShipment,
+  reopenShipment,
   deleteShipment,
+  pickShipmentItem,
+  unpickShipmentItem,
   updateShipmentItem,
 }

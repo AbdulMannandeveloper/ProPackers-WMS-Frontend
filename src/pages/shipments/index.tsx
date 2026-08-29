@@ -211,7 +211,7 @@ export default function ShipmentsPage() {
   // Handle Mark Item as Picked
   const handlePickItem = async (itemId: string) => {
     try {
-      await shipmentsApi.updateShipmentItem(itemId, { status: 'PICKED' })
+      await shipmentsApi.pickShipmentItem(itemId)
       showToast('Item checked off as PICKED.')
 
       // Update local state details to reflect PICKED
@@ -227,16 +227,62 @@ export default function ShipmentsPage() {
     }
   }
 
+  // Put a mis-picked line back on the shelf
+  const handleUnpickItem = async (itemId: string) => {
+    try {
+      await shipmentsApi.unpickShipmentItem(itemId)
+      showToast('Item returned to PENDING.')
+
+      if (selectedShipment) {
+        const updatedItems = selectedShipment.shipmentItems?.map((item) =>
+          item.id === itemId ? { ...item, status: 'PENDING' as const } : item
+        )
+        setSelectedShipment({ ...selectedShipment, shipmentItems: updatedItems })
+      }
+      await loadData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Unpick action failed.', 'error')
+    }
+  }
+
   // Complete Picking -> Set Ready for Dispatch
+  // The server re-checks that every item is picked; this is no longer a status
+  // write but a guarded transition.
   const handleMarkReady = async () => {
     if (!selectedShipment) return
     try {
-      await shipmentsApi.updateShipment(selectedShipment.id, { status: 'READY_FOR_DISPATCH' })
+      await shipmentsApi.markShipmentReady(selectedShipment.id)
       showToast('All items packed. Shipment is ready for courier dispatch.')
       setDetailsModalOpen(false)
       await loadData()
     } catch (err: any) {
       showToast(err?.response?.data?.error || err?.message || 'Status update failed.', 'error')
+    }
+  }
+
+  // Admin only: pull a prematurely-readied shipment back to PENDING
+  const handleReopen = async () => {
+    if (!selectedShipment) return
+    try {
+      await shipmentsApi.reopenShipment(selectedShipment.id)
+      showToast('Shipment reopened for picking.')
+      setDetailsModalOpen(false)
+      await loadData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Reopen failed.', 'error')
+    }
+  }
+
+  // Admin only: cancel and hand the reserved stock back
+  const handleCancelShipment = async () => {
+    if (!selectedShipment) return
+    try {
+      await shipmentsApi.cancelShipment(selectedShipment.id)
+      showToast('Shipment cancelled. Reserved stock released.')
+      setDetailsModalOpen(false)
+      await loadData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Cancel failed.', 'error')
     }
   }
 
@@ -271,6 +317,7 @@ export default function ShipmentsPage() {
   const pendingCount = useMemo(() => shipments.filter((s) => s.status === 'PENDING').length, [shipments])
   const readyCount = useMemo(() => shipments.filter((s) => s.status === 'READY_FOR_DISPATCH').length, [shipments])
   const dispatchedCount = useMemo(() => shipments.filter((s) => s.status === 'DISPATCHED').length, [shipments])
+  const cancelledCount = useMemo(() => shipments.filter((s) => s.status === 'CANCELLED').length, [shipments])
 
   // Helper to map employee name
   const getEmployeeName = (emp?: any | null) => {
@@ -321,6 +368,7 @@ export default function ShipmentsPage() {
           { label: 'Pending Picking', value: pendingCount, color: 'text-amber-700 bg-amber-50 border-amber-100 dark:bg-amber-950/30 dark:border-amber-900 dark:text-amber-300' },
           { label: 'Ready for Dispatch', value: readyCount, color: 'text-indigo-700 bg-indigo-50 border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-300' },
           { label: 'Completed Dispatches', value: dispatchedCount, color: 'text-teal-700 bg-teal-50 border-teal-100 dark:bg-teal-950/30 dark:border-teal-900 dark:text-teal-300' },
+          { label: 'Cancelled', value: cancelledCount, color: 'text-rose-700 bg-rose-50 border-rose-100 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-300' },
         ].map(({ label, value, color }) => (
           <div key={label} className={`flex-1 border rounded-2xl p-5 shadow-sm flex flex-col justify-between ${color}`}>
             <div>
@@ -618,6 +666,19 @@ export default function ShipmentsPage() {
                 Confirm Outbound Dispatch
               </Button>
             )}
+            {/* Correcting or voiding a shipment is an admin decision. */}
+            {isAdmin && selectedShipment?.status === 'READY_FOR_DISPATCH' && (
+              <Button variant="outline" onClick={handleReopen}>
+                Reopen for Picking
+              </Button>
+            )}
+            {isAdmin &&
+              (selectedShipment?.status === 'PENDING' ||
+                selectedShipment?.status === 'READY_FOR_DISPATCH') && (
+                <Button variant="outline" onClick={handleCancelShipment}>
+                  Cancel Shipment
+                </Button>
+              )}
           </div>
         }
       >
@@ -708,7 +769,15 @@ export default function ShipmentsPage() {
                                   Mark Picked
                                 </Button>
                               ) : (
-                                <span className="text-xs text-emerald-500 font-semibold">Ready</span>
+                                // A mis-scan should be correctable without
+                                // cancelling the whole shipment.
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleUnpickItem(item.id)}
+                                >
+                                  Undo Pick
+                                </Button>
                               )}
                             </td>
                           )}
