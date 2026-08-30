@@ -6,8 +6,19 @@ import axios, {
 
 import { useAuthStore } from '@/stores/auth'
 
+/**
+ * Empty base URL means same-origin relative requests, which is how production
+ * serves this: nginx hands back the app and proxies /api to the API. Keeping
+ * them on one origin is what lets the session refresh cookie stay SameSite=Lax
+ * rather than SameSite=None, and removes the CORS preflight from every call.
+ *
+ * In development Vite serves on :5173 and the API on :8000, so the env var
+ * points across. Set it to "" for a same-origin build.
+ */
 export const AXIOS_INSTANCE = axios.create({
-  baseURL: import.meta.env.VITE_BASE_API_URL || 'http://localhost:8000',
+  baseURL: import.meta.env.VITE_BASE_API_URL ?? '',
+  // The refresh cookie is httpOnly; the browser only sends it when asked to.
+  withCredentials: true,
 })
 
 const handleGlobalHttpError = (_error: AxiosError): void => {
