@@ -11,12 +11,16 @@ import {
 import type { Shipment } from '@/api/shipments'
 import type { Product } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
-import type { Client } from '@/api/types'
 
 type EmployeeOption = {
   id: string
   firstName: string | null
   lastName: string | null
+}
+
+type ClientOption = {
+  id: string
+  companyName: string
 }
 import type { ClientServiceRate } from '@/api/clientServices'
 import {
@@ -45,7 +49,9 @@ export default function ShipmentsPage() {
   // and name only, deliberately, so a dropdown does not carry NI numbers and
   // salaries into the browser.
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
-  const [clients, setClients] = useState<Client[]>([])
+  // The lookup shape, not the full Client: /api/clients/lookup is what staff
+  // are allowed to read, and id + companyName is all this page renders.
+  const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(false)
 
   // Custom Toast Notification State
@@ -90,17 +96,37 @@ export default function ShipmentsPage() {
   // Load All Core WMS Components
   const loadData = async () => {
     setLoading(true)
+    // Records which optional list failed, so the reason reaches the user
+    // instead of becoming an empty dropdown.
+    const loadFailures: string[] = []
+    const track = (label: string) => (err: unknown): never[] => {
+      console.error(`Failed to load ${label}:`, err)
+      loadFailures.push(label)
+      return []
+    }
     try {
       const [shipmentsData, prodsData, stockData, empsData, clientsData] = await Promise.all([
         shipmentsApi.getAllShipments(),
         productsApi.getAllProducts(),
         stockApi.getAllStockLevels(),
-        // Lookup, not getAllEmployees: that one is admin-only, so an employee
-        // raising a shipment got a 403 the .catch() swallowed, leaving the
-        // operator list empty and the create dialog refusing to open.
-        employeesApi.getEmployeeLookup().catch(() => []),
-        clientsApi.getAllClients().catch(() => []),
+        // Lookups, not the full lists. getAllEmployees and getAllClients are
+        // both admin-only, so an employee raising a shipment got a 403 that the
+        // .catch() swallowed — leaving the dropdowns empty and the create dialog
+        // refusing to open with "Need registered clients and employees", which
+        // is a nonsense message when both plainly exist.
+        //
+        // Failures are recorded rather than silently flattened to []: that habit
+        // is what turned one 403 into two separate bug reports.
+        employeesApi.getEmployeeLookup().catch(track('operators')),
+        clientsApi.getClientLookup().catch(track('clients')),
       ])
+
+      if (loadFailures.length > 0) {
+        showToast(
+          `Could not load ${loadFailures.join(' or ')}. Some options will be missing.`,
+          'error'
+        )
+      }
 
       setShipments(shipmentsData || [])
       setProducts(prodsData || [])
