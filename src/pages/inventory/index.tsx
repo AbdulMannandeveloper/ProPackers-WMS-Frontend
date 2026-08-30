@@ -8,7 +8,7 @@ import {
   warehouseLocations as locationsApi,
   auditLogs as auditLogsApi,
 } from '@/api'
-import type { Product, ProductDetail } from '@/api/products'
+import type { Product, ProductDetail, ScanMatch } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
 import type { InventoryLedgerEntry } from '@/api/inventory'
 import {
@@ -20,6 +20,9 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
+import { BarcodeScanner } from '@/components/scanner'
+import { ScanResultPanel } from '@/features/inventory/ScanResultPanel'
+import { CheckInPanel } from '@/features/inventory/CheckInPanel'
 import JsBarcode from 'jsbarcode'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -191,6 +194,62 @@ export default function InventoryPage() {
     setThresholdLimit(prod.thresholdLimit)
     setWithOpeningStock(false)
     setProductModalOpen(true)
+  }
+
+  // ── Scanning ───────────────────────────────────────────────────────────────
+  // Two modes off the same scanner: 'find' jumps to the product, 'checkin' books
+  // stock against a bin and keeps the camera running for the next carton.
+  const [scanMode, setScanMode] = useState<'find' | 'checkin' | null>(null)
+  const [scanResultOpen, setScanResultOpen] = useState(false)
+  const [scannedCode, setScannedCode] = useState('')
+  const [scanMatches, setScanMatches] = useState<ScanMatch[]>([])
+  const [scanNotFound, setScanNotFound] = useState(false)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [checkInProduct, setCheckInProduct] = useState<ScanMatch | null>(null)
+
+  const resolveScan = async (code: string) => {
+    setScannedCode(code)
+    setScanLoading(true)
+    setScanNotFound(false)
+    setScanMatches([])
+    setCheckInProduct(null)
+    setScanResultOpen(true)
+    try {
+      const { matches } = await productsApi.lookupByCode(code)
+      setScanMatches(matches)
+      // Exactly one match in check-in mode goes straight to the booking form —
+      // on a goods-in bench an extra confirmation per carton is a real cost.
+      if (matches.length === 1 && scanMode === 'checkin') {
+        setCheckInProduct(matches[0])
+      }
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        setScanNotFound(true)
+      } else {
+        showToast(err?.response?.data?.error || err?.message || 'Lookup failed.', 'error')
+        setScanResultOpen(false)
+      }
+    } finally {
+      setScanLoading(false)
+    }
+  }
+
+  const closeScanResult = () => {
+    setScanResultOpen(false)
+    setScanMatches([])
+    setScanNotFound(false)
+    setCheckInProduct(null)
+    setScannedCode('')
+  }
+
+  const handleScanPick = async (picked: ScanMatch | Product) => {
+    if (scanMode === 'checkin') {
+      setCheckInProduct(picked as ScanMatch)
+      return
+    }
+    closeScanResult()
+    setScanMode(null)
+    await handleOpenDetail(picked as Product)
   }
 
   // Product detail — one request returns product, stock by location and recent movements
@@ -686,6 +745,12 @@ export default function InventoryPage() {
         </div>
         {isStaff && (
           <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setScanMode('find')}>
+              Scan to Find
+            </Button>
+            <Button variant="secondary" onClick={() => setScanMode('checkin')}>
+              Scan to Check In
+            </Button>
             <Button variant="secondary" onClick={() => handleOpenAdjustStock()}>
               Adjust Stock Level
             </Button>
@@ -1978,6 +2043,73 @@ export default function InventoryPage() {
         </div>
       </Modal>
 
+      {/* ─────────────────────────────────── SCANNER ─────────────────────────────────── */}
+      <BarcodeScanner
+        open={scanMode !== null && !scanResultOpen}
+        onClose={() => setScanMode(null)}
+        onScan={resolveScan}
+        title={scanMode === 'checkin' ? 'Scan to check in' : 'Scan to find'}
+        description={
+          scanMode === 'checkin'
+            ? 'Scan each carton as it comes off the pallet.'
+            : 'Hold the label steady inside the frame.'
+        }
+      />
+
+      {/* What the scan resolved to: one product, several, or none */}
+      <Modal
+        open={scanResultOpen}
+        onClose={() => {
+          closeScanResult()
+          // Back to the camera rather than out of the flow entirely — in
+          // check-in mode the next carton is already waiting.
+          if (scanMode !== 'checkin') setScanMode(null)
+        }}
+        title={checkInProduct ? 'Check stock in' : 'Scan result'}
+        description={scannedCode ? `Code ${scannedCode}` : undefined}
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                closeScanResult()
+                if (scanMode !== 'checkin') setScanMode(null)
+              }}
+            >
+              {scanMode === 'checkin' ? 'Scan next' : 'Close'}
+            </Button>
+          </div>
+        }
+      >
+        {scanLoading ? (
+          <p className="py-6 text-center text-sm text-slate-400">Looking that up…</p>
+        ) : checkInProduct ? (
+          <CheckInPanel
+            product={checkInProduct}
+            locations={locations}
+            onBookedIn={() => void loadData()}
+            onError={(m) => showToast(m, 'error')}
+            onDone={() => {
+              closeScanResult()
+              setScanMode(null)
+            }}
+          />
+        ) : (
+          <ScanResultPanel
+            code={scannedCode}
+            matches={scanMatches}
+            notFound={scanNotFound}
+            allProducts={products}
+            onPick={handleScanPick}
+            onAttached={() => {
+              showToast('Barcode attached. Scan it again to open the product.')
+              closeScanResult()
+            }}
+            onError={(m) => showToast(m, 'error')}
+          />
+        )}
+      </Modal>
     </div>
   )
 }
