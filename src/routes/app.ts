@@ -2,6 +2,7 @@ import DashboardLayout from '@/layouts/dashboard/layout'
 import DashboardIndex from '@/pages/dashboard/index'
 import UsersPage from '@/pages/users/index'
 import ClientsPage from '@/pages/clients/index'
+import EmployeesPage from '@/pages/employees/index'
 import ServicesPage from '@/pages/services/index'
 import WarehouseLocationsPage from '@/pages/warehouse-locations/index'
 import AttendancePage from '@/pages/attendance/index'
@@ -22,6 +23,7 @@ export const appRoutes: RouteGroup = {
     { path: '/', element: DashboardIndex, title: 'Dashboard', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/users', element: UsersPage, title: 'Users', requireAuth: true, allowedRoles: ['admin'] },
     { path: '/clients', element: ClientsPage, title: 'Clients', requireAuth: true, allowedRoles: ['admin'] },
+    { path: '/employees', element: EmployeesPage, title: 'Employees', requireAuth: true, allowedRoles: ['admin'] },
     { path: '/services', element: ServicesPage, title: 'Services', requireAuth: true, allowedRoles: ['admin'] },
     { path: '/warehouse-locations', element: WarehouseLocationsPage, title: 'Warehouse Locations', requireAuth: true, allowedRoles: ['admin'] },
     { path: '/attendance', element: AttendancePage, title: 'Attendance', requireAuth: true, allowedRoles: ['admin', 'employee'] },

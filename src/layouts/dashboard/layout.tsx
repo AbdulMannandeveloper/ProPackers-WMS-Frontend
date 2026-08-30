@@ -18,6 +18,7 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/app', icon: LayoutDashboard },
   { label: 'Users', href: '/app/users', icon: Users, adminOnly: true },
   { label: 'Clients', href: '/app/clients', icon: Briefcase, adminOnly: true },
+  { label: 'Employees', href: '/app/employees', icon: Users, adminOnly: true },
   { label: 'Services', href: '/app/services', icon: Layers, adminOnly: true },
   { label: 'Warehouse Locations', href: '/app/warehouse-locations', icon: Map, adminOnly: true },
   { label: 'Attendance', href: '/app/attendance', icon: Clock },
