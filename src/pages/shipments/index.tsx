@@ -2,15 +2,11 @@ import { useEffect, useState, useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth'
 import {
   shipments as shipmentsApi,
-  products as productsApi,
-  stock as stockApi,
   employees as employeesApi,
   clients as clientsApi,
   clientServices as clientServicesApi,
 } from '@/api'
 import type { Shipment } from '@/api/shipments'
-import type { Product } from '@/api/products'
-import type { StockLevel } from '@/api/stock'
 
 type EmployeeOption = {
   id: string
@@ -33,6 +29,15 @@ import {
   Modal,
 } from '@/components/Shared Components'
 import { TrackingChip } from '@/components/TrackingChip'
+import { ProductPicker } from '@/features/shipments/ProductPicker'
+import {
+  basketUnitCount,
+  estimateDispatchCharge,
+  foreignLines,
+  mergeLines,
+  toShipmentItems,
+  type PickLine,
+} from '@/features/shipments/picking'
 import { COURIERS, validateTrackingId, normaliseTrackingId } from '@/lib/couriers'
 
 export default function ShipmentsPage() {
@@ -43,8 +48,6 @@ export default function ShipmentsPage() {
 
   // Data States
   const [shipments, setShipments] = useState<Shipment[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [stockLevels, setStockLevels] = useState<StockLevel[]>([])
   // The lookup shape, not the full Employee: /api/employees/lookup returns id
   // and name only, deliberately, so a dropdown does not carry NI numbers and
   // salaries into the browser.
@@ -86,7 +89,9 @@ export default function ShipmentsPage() {
   const [formShipmentType, setFormShipmentType] = useState('Standard')
   const [formPackagingType, setFormPackagingType] = useState('Box')
   const [formCourierName, setFormCourierName] = useState('DPD')
-  const [formItems, setFormItems] = useState<{ productId: string; sourceLocationId: string; quantity: number }[]>([])
+  // Basket lines, one per (product, bin). A product drawn from three bins is
+  // three lines, which is exactly what ShipmentItem models server-side.
+  const [formItems, setFormItems] = useState<PickLine[]>([])
   // Billable services. Admin-only: the API refuses them from an employee, matching
   // the admin-only /services endpoints.
   const [clientRates, setClientRates] = useState<ClientServiceRate[]>([])
@@ -105,10 +110,12 @@ export default function ShipmentsPage() {
       return []
     }
     try {
-      const [shipmentsData, prodsData, stockData, empsData, clientsData] = await Promise.all([
+      // No product or stock preload: ProductPicker resolves a scanned or typed
+      // code through the barcode lookup and reads that product's bins from the
+      // response, so pulling the whole catalogue and every stock row on page
+      // load was work nobody used.
+      const [shipmentsData, empsData, clientsData] = await Promise.all([
         shipmentsApi.getAllShipments(),
-        productsApi.getAllProducts(),
-        stockApi.getAllStockLevels(),
         // Lookups, not the full lists. getAllEmployees and getAllClients are
         // both admin-only, so an employee raising a shipment got a 403 that the
         // .catch() swallowed — leaving the dropdowns empty and the create dialog
@@ -129,8 +136,6 @@ export default function ShipmentsPage() {
       }
 
       setShipments(shipmentsData || [])
-      setProducts(prodsData || [])
-      setStockLevels(stockData || [])
       setEmployees(empsData || [])
       setClients(clientsData || [])
     } catch (err: any) {
@@ -205,47 +210,26 @@ export default function ShipmentsPage() {
   }
 
   // Form Item Row Handlers
-  const handleAddItemRow = () => {
-    const activeProducts = products.filter((p) => !p.isDeactivated)
-    if (activeProducts.length === 0) {
-      showToast('No active SKUs in the catalog.', 'error')
-      return
-    }
-    const defaultProduct = activeProducts[0]
-    // Filter stock locations having this product
-    const availableStocks = stockLevels.filter((s) => s.productId === defaultProduct.id && s.currentQuantity > s.reservedQuantity)
-    const defaultLocationId = availableStocks[0]?.locationId || ''
-
-    setFormItems((prev) => [
-      ...prev,
-      {
-        productId: defaultProduct.id,
-        sourceLocationId: defaultLocationId,
-        quantity: 1,
-      },
-    ])
+  /** Adds picked lines, merging a repeat of the same product and bin. */
+  const handleAddPicked = (lines: PickLine[]) => {
+    setFormItems((prev) => mergeLines(prev, lines))
   }
 
   const handleRemoveItemRow = (idx: number) => {
     setFormItems((prev) => prev.filter((_, i) => i !== idx))
   }
 
-  const handleItemRowChange = (idx: number, field: string, value: any) => {
-    setFormItems((prev) =>
-      prev.map((item, i) => {
-        if (i !== idx) return item
-        const updated = { ...item, [field]: value }
-
-        // If product changes, dynamically recalculate default source location with available stock
-        if (field === 'productId') {
-          const availableStocks = stockLevels.filter((s) => s.productId === value && s.currentQuantity > s.reservedQuantity)
-          updated.sourceLocationId = availableStocks[0]?.locationId || ''
-          updated.quantity = 1
-        }
-        return updated
-      })
-    )
-  }
+  /**
+   * The client's agreed per-item dispatch rate, or null if they have none.
+   *
+   * Read from the rate card, matching what the server charges. Only admins can
+   * read /api/client-services, so for an employee this is null and no estimate
+   * is shown — which is honest: an employee genuinely does not know the rate.
+   */
+  const dispatchRate = (() => {
+    const row = clientRates.find((r) => r.service?.code === 'SHIPMENT_DISPATCH')
+    return row ? Number(row.chargedPrice) : null
+  })()
 
   // Save Shipment
   const handleSaveShipment = async (e: React.FormEvent) => {
@@ -255,19 +239,16 @@ export default function ShipmentsPage() {
       return
     }
 
-    // Validate quantities and locations
-    for (const item of formItems) {
-      if (!item.sourceLocationId) {
-        showToast('Source location is missing or has no stock for selected item.', 'error')
-        return
-      }
-      const stock = stockLevels.find((s) => s.productId === item.productId && s.locationId === item.sourceLocationId)
-      const available = stock ? (stock.currentQuantity - stock.reservedQuantity) : 0
-      if (item.quantity > available) {
-        const prod = products.find((p) => p.id === item.productId)
-        showToast(`Insufficient quantity for ${prod?.skuCode || 'item'}. Available: ${available} units.`, 'error')
-        return
-      }
+    // The picker already refuses over-picking a bin and a foreign product, but
+    // the client can be changed after items are added — so re-check here rather
+    // than trusting a basket assembled under a different client.
+    const foreign = foreignLines(formItems, formClientId)
+    if (foreign.length > 0) {
+      showToast(
+        `${foreign[0].productName} belongs to another client. Remove it or change the client.`,
+        'error'
+      )
+      return
     }
 
     setSaving(true)
@@ -279,11 +260,7 @@ export default function ShipmentsPage() {
         packagingType: formPackagingType,
         courierName: formCourierName,
         status: 'PENDING',
-        shipmentItems: formItems.map((item) => ({
-          productId: item.productId,
-          sourceLocationId: item.sourceLocationId,
-          quantity: item.quantity,
-        })),
+        shipmentItems: toShipmentItems(formItems),
         ...(formServices.length > 0
           ? {
               shipmentServices: formServices.map((s) => ({
@@ -721,78 +698,72 @@ export default function ShipmentsPage() {
           </div>
 
           <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Shipment Items & Allocations</h3>
-              <Button type="button" size="sm" variant="secondary" onClick={handleAddItemRow}>
-                + Add Item
-              </Button>
-            </div>
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+              Items to pick
+            </h3>
+
+            <ProductPicker
+              clientId={formClientId}
+              onAdd={handleAddPicked}
+              onError={(m) => showToast(m, 'error')}
+            />
 
             {formItems.length === 0 ? (
               <div className="text-center py-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 text-sm">
-                No items added. Click "+ Add Item" to allocate items to pick.
+                Nothing picked yet. Scan or search for a product above.
               </div>
             ) : (
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {formItems.map((item, idx) => {
-                  const activeProducts = products.filter((p) => !p.isDeactivated)
-                  // Find locations that have stock for this product
-                  const productStocks = stockLevels.filter((s) => s.productId === item.productId && s.currentQuantity > s.reservedQuantity)
-
-                  return (
-                    <div key={idx} className="flex gap-2 items-end bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                      <div className="flex-1">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Product SKU</label>
-                        <Select
-                          value={item.productId}
-                          onChange={(e) => handleItemRowChange(idx, 'productId', e.target.value)}
-                        >
-                          {activeProducts.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              [{p.skuCode}] {p.productName}
-                            </option>
-                          ))}
-                        </Select>
+                {formItems.map((item, idx) => (
+                  <div
+                    key={`${item.productId}-${item.locationId}`}
+                    className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">
+                        {item.productName}
                       </div>
-                      <div className="flex-1">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Pick Location (Available Stock)</label>
-                        <Select
-                          value={item.sourceLocationId}
-                          onChange={(e) => handleItemRowChange(idx, 'sourceLocationId', e.target.value)}
-                          required
-                        >
-                          {productStocks.length === 0 ? (
-                            <option value="">No Stock Available</option>
-                          ) : (
-                            productStocks.map((stock) => (
-                              <option key={stock.locationId} value={stock.locationId}>
-                                {stock.location?.locationName} (Avail: {stock.currentQuantity - stock.reservedQuantity} units)
-                              </option>
-                            ))
-                          )}
-                        </Select>
+                      <div className="text-xs text-slate-400 font-mono truncate">
+                        {item.skuCode} · from {item.locationName}
                       </div>
-                      <div className="w-24">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Quantity</label>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => handleItemRowChange(idx, 'quantity', parseInt(e.target.value) || 1)}
-                          required
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={() => handleRemoveItemRow(idx)}
-                        className="mb-0.5 px-3"
-                      >
-                        Delete
-                      </Button>
                     </div>
-                  )
-                })}
+                    <Badge variant="secondary">{item.quantity}</Badge>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => handleRemoveItemRow(idx)}
+                      className="px-3"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {formItems.length > 0 && (
+              <div className="flex items-center justify-between gap-2 flex-wrap rounded-xl bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm">
+                <span className="text-slate-500">
+                  <strong className="text-slate-800 dark:text-slate-200">
+                    {basketUnitCount(formItems)}
+                  </strong>{' '}
+                  item{basketUnitCount(formItems) === 1 ? '' : 's'} across{' '}
+                  {formItems.length} location{formItems.length === 1 ? '' : 's'}
+                </span>
+                {/* Per item, matching the server. Absent rather than zero when
+                    the rate is unknown: "not charged" and "charged nothing"
+                    read differently. */}
+                {dispatchRate !== null && (
+                  <span className="text-slate-500">
+                    Dispatch charge{' '}
+                    <strong className="text-slate-800 dark:text-slate-200">
+                      £{estimateDispatchCharge(formItems, dispatchRate)?.toFixed(2)}
+                    </strong>{' '}
+                    <span className="text-xs text-slate-400">
+                      ({basketUnitCount(formItems)} × £{dispatchRate.toFixed(2)})
+                    </span>
+                  </span>
+                )}
               </div>
             )}
           </div>

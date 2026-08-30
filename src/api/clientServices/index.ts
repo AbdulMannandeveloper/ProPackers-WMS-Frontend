@@ -13,7 +13,7 @@ export type ClientServiceRate = {
   serviceId: string
   chargedPrice: number | string
   unit?: string
-  service?: { id: string; description: string; unit: string }
+  service?: { id: string; description: string; unit: string; code?: string | null }
 }
 
 /**
