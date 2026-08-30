@@ -25,6 +25,7 @@ export const clientRoutes: RouteGroup = {
   routes: [
     section('/', 'Overview'),
     section('/inventory', 'My Inventory'),
+    section('/shipments', 'Shipments'),
     section('/billing', 'Billing & Invoices'),
     section('/services', 'Services'),
     section('/profile', 'Profile'),

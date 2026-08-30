@@ -117,6 +117,23 @@ export const setTaxRate = (rate: number): Promise<{ rate: number }> =>
 export const setInvoiceTax = (id: string, applied: boolean): Promise<MonthlyInvoice> =>
   httpClient({ method: 'POST', url: `${BASE}/${id}/tax`, data: { applied } })
 
+/**
+ * Which company an invoice is issued by.
+ *
+ * Taxed work is billed by Nayoram Ltd, the VAT-registered entity; everything
+ * else by Pro Packers UK. Mirrors utils/invoiceIdentity.js on the server, which
+ * is what actually decides — this is here so an admin can see which company an
+ * invoice goes out as before approving it, since that is the moment the bank
+ * details on the PDF are fixed.
+ */
+export const issuingCompany = (invoice: {
+  taxApplied?: boolean
+  taxAmount?: number | string
+}): 'Nayoram Ltd' | 'Pro Packers UK' =>
+  invoice.taxApplied && Number(invoice.taxAmount ?? 0) > 0
+    ? 'Nayoram Ltd'
+    : 'Pro Packers UK'
+
 /** What the client actually owes: the ex-tax total plus any tax. */
 export const grandTotal = (invoice: {
   totalAmount: number | string
@@ -143,4 +160,5 @@ export default {
   setTaxRate,
   setInvoiceTax,
   grandTotal,
+  issuingCompany,
 }

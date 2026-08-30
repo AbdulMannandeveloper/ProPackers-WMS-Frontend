@@ -42,6 +42,7 @@ const navItems: NavItem[] = [
 const clientNavItems: NavItem[] = [
   { label: 'Overview', href: '/client', icon: LayoutDashboard },
   { label: 'My Inventory', href: '/client/inventory', icon: Package },
+  { label: 'Shipments', href: '/client/shipments', icon: Truck },
   { label: 'Billing & Invoices', href: '/client/billing', icon: FileText },
   { label: 'Services', href: '/client/services', icon: Layers },
   { label: 'Profile', href: '/client/profile', icon: Briefcase },
