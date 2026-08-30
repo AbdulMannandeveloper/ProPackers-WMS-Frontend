@@ -1,8 +1,10 @@
-import { Fragment } from 'react'
+import { Fragment, useEffect } from 'react'
 
 import { BrowserRouter, Route, Routes } from 'react-router'
 
 import { ProtectedRoute } from '@/protected-route'
+import { restoreSession } from '@/api/http-client'
+import { useAuthStore } from '@/stores/auth'
 import { ErrorBoundary } from '@/error-boundary'
 import AuthLayout from '@/layouts/auth/layout'
 import { homeRoutes } from '@/routes/home.tsx'
@@ -15,6 +17,20 @@ import Error403 from '@/pages/error/403'
 import NotFound404 from '@/pages/error/404'
 
 function App() {
+  const setAuthReady = useAuthStore((s) => s.setAuthReady)
+
+  // One attempt at the refresh cookie on boot. It either yields a fresh access
+  // token into memory or it does not, and either way the routes may then decide.
+  useEffect(() => {
+    let cancelled = false
+    restoreSession().finally(() => {
+      if (!cancelled) setAuthReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [setAuthReady])
+
   const AppLayout = appRoutes.layout ?? Fragment
   const ClientLayout = clientRoutes.layout ?? Fragment
 

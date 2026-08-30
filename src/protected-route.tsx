@@ -18,11 +18,23 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   const token = useAuthStore((s) => s.token)
   const role = useAuthStore((s) => s.role)
+  const authReady = useAuthStore((s) => s.authReady)
   const isAuthenticated = Boolean(token)
   const location = useLocation()
 
   if (!requireAuth) {
     return <>{children}</>
+  }
+
+  // The access token is held in memory, so after a reload it is briefly absent
+  // while the refresh cookie is exchanged for a new one. Redirecting during that
+  // window would sign out every user who pressed F5.
+  if (!authReady) {
+    return (
+      <div className="grid min-h-screen place-items-center text-sm text-slate-400">
+        Restoring your session…
+      </div>
+    )
   }
 
   if (!isAuthenticated) {
