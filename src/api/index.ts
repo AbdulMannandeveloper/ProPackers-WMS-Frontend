@@ -18,6 +18,7 @@ import * as expenses from './expenses'
 import * as profitLoss from './profit-loss'
 import * as auditLogs from './audit-logs'
 import * as clientServices from './clientServices'
+import * as fda from './fda'
 
 export {
   auth,
@@ -40,6 +41,7 @@ export {
   profitLoss,
   auditLogs,
   clientServices,
+  fda,
 }
 
 export default {
@@ -63,4 +65,5 @@ export default {
   profitLoss,
   auditLogs,
   clientServices,
+  fda,
 }
