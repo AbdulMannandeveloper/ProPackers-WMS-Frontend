@@ -25,9 +25,9 @@ const asRole = (role: 'admin' | 'employee' | 'client') => {
   } as never)
 }
 
-const renderNav = () =>
+const renderNav = (initialPath = '/') =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <DashboardLayout>
         <div>content</div>
       </DashboardLayout>
@@ -38,6 +38,16 @@ const renderNav = () =>
 const linkNames = () =>
   screen.getAllByRole('link').map((a) => a.textContent?.trim() ?? '')
 
+/**
+ * Where the sidebar links actually point.
+ *
+ * Asserted for the client instead of the labels: a client now has their own
+ * "My Inventory", so matching the word "inventory" no longer distinguishes
+ * their page from the staff one. The destination does.
+ */
+const linkHrefs = () =>
+  screen.getAllByRole('link').map((a) => a.getAttribute('href') ?? '')
+
 beforeEach(() => {
   useAuthStore.setState({ role: null, token: null } as never)
 })
@@ -45,21 +55,36 @@ beforeEach(() => {
 describe('a client', () => {
   beforeEach(() => asRole('client'))
 
-  it('sees a link to their own portal', () => {
+  it('sees their own portal sections', () => {
     renderNav()
-    expect(linkNames().join(' | ')).toMatch(/portal/i)
+    const hrefs = linkHrefs()
+
+    expect(hrefs).toContain('/client')
+    expect(hrefs).toContain('/client/billing')
+    expect(hrefs).toContain('/client/inventory')
   })
 
-  it('is not shown staff areas', () => {
-    // The bug, stated as five assertions.
+  it('can reach every section from the sidebar', () => {
+    // The portal briefly had a second column of links inside the page while the
+    // real sidebar held one item.
     renderNav()
-    const nav = linkNames().join(' | ')
+    expect(linkHrefs()).toHaveLength(5)
+  })
 
-    expect(nav).not.toMatch(/payroll/i)
-    expect(nav).not.toMatch(/inventory/i)
-    expect(nav).not.toMatch(/shipments/i)
-    expect(nav).not.toMatch(/attendance/i)
-    expect(nav).not.toMatch(/dashboard/i)
+  it('is shown nothing outside the portal', () => {
+    // The original bug was a client seeing the whole staff sidebar. Asserted on
+    // destinations rather than labels, because a client's own "My Inventory"
+    // and the staff Inventory page share a word but not an address.
+    renderNav()
+
+    for (const href of linkHrefs()) {
+      expect(href.startsWith('/client')).toBe(true)
+    }
+  })
+
+  it('is shown no /app route at all', () => {
+    renderNav()
+    expect(linkHrefs().some((h) => h.startsWith('/app'))).toBe(false)
   })
 
   it('is not shown admin areas either', () => {
@@ -72,6 +97,31 @@ describe('a client', () => {
   })
 })
 
+describe('which section is marked current', () => {
+  beforeEach(() => asRole('client'))
+
+  it('marks Overview on the portal root', () => {
+    renderNav('/client')
+    const current = screen.getAllByRole('link').filter(
+      (a) => a.getAttribute('aria-current') === 'page'
+    )
+    expect(current).toHaveLength(1)
+    expect(current[0].getAttribute('href')).toBe('/client')
+  });
+
+  it('does not leave Overview lit on a sub-page', () => {
+    // '/client' is a prefix of every section beneath it, so a startsWith match
+    // marks Overview current everywhere — two links claiming to be the page.
+    renderNav('/client/billing')
+    const current = screen.getAllByRole('link').filter(
+      (a) => a.getAttribute('aria-current') === 'page'
+    )
+
+    expect(current).toHaveLength(1)
+    expect(current[0].getAttribute('href')).toBe('/client/billing')
+  })
+})
+
 describe('an employee', () => {
   beforeEach(() => asRole('employee'))
 
@@ -81,6 +131,8 @@ describe('an employee', () => {
 
     expect(nav).toMatch(/inventory/i)
     expect(nav).toMatch(/shipments/i)
+    // Staff manage the layout of the building they work in.
+    expect(nav).toMatch(/warehouse locations/i)
   })
 
   it('is not shown the admin-only areas', () => {

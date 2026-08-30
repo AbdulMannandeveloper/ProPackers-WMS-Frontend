@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useLocation } from 'react-router'
 import { useAuthStore } from '@/stores/auth'
 import {
   clients as apiClients,
@@ -26,11 +27,46 @@ import {
   Modal,
 } from '@/components/Shared Components'
 
+type Section = 'overview' | 'inventory' | 'billing' | 'services' | 'profile'
+
+/** Which portal section each address shows. Mirrors src/routes/client.ts. */
+const SECTION_BY_PATH: Record<string, Section> = {
+  '/client': 'overview',
+  '/client/inventory': 'inventory',
+  '/client/billing': 'billing',
+  '/client/services': 'services',
+  '/client/profile': 'profile',
+}
+
+const SECTION_TITLES: Record<Section, string> = {
+  overview: 'Client Portal',
+  inventory: 'My Inventory',
+  billing: 'Billing & Invoices',
+  services: 'Services',
+  profile: 'Profile',
+}
+
+const SECTION_BLURBS: Record<Section, string> = {
+  overview: 'View your inventory, services, and billing information.',
+  inventory: 'Stock we are holding for you right now.',
+  billing: 'Your statements, invoices and payment history.',
+  services: 'The services you are signed up for.',
+  profile: 'Your account and contact details.',
+}
+
+/** '/client/' and '/client' are the same page. */
+const stripTrailingSlash = (path: string) =>
+  path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+
 export default function ClientPortalPage() {
   const userId = useAuthStore((s) => s.userId)
   const displayName = useAuthStore((s) => s.displayName) ?? 'Client'
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'billing' | 'services' | 'profile'>('overview')
+  // The section comes from the URL, not from local state: the sidebar drives it
+  // like every other part of the app, so back/forward works and a client can
+  // bookmark their invoices.
+  const { pathname } = useLocation()
+  const activeTab = SECTION_BY_PATH[stripTrailingSlash(pathname)] ?? 'overview'
   const [loading, setLoading] = useState(false)
   const [myClient, setMyClient] = useState<Client | null>(null)
 
@@ -202,14 +238,6 @@ export default function ClientPortalPage() {
     })
   }, [invoices, billingStatusFilter, billingStartDate, billingEndDate])
 
-  const tabs = [
-    { id: 'overview', label: 'Overview', hint: 'At a glance' },
-    { id: 'inventory', label: 'My Inventory', hint: 'Stock we hold for you' },
-    { id: 'billing', label: 'Billing & Invoices', hint: 'Statements and payments' },
-    { id: 'services', label: 'Services', hint: 'What you are signed up for' },
-    { id: 'profile', label: 'Profile', hint: 'Your account details' },
-  ] as const
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto relative">
       {/* Toast */}
@@ -229,52 +257,14 @@ export default function ClientPortalPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Client Portal</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+          {SECTION_TITLES[activeTab]}
+        </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Welcome, {displayName}. View your inventory, services, and billing information.
+          Welcome, {displayName}. {SECTION_BLURBS[activeTab]}
         </p>
       </div>
 
-      {/* Side navigation.
-          Vertical rather than a row of tabs: five labels of very uneven length
-          crammed onto one line read as a wall, and "Billing & Invoices" was
-          being squeezed against its neighbours. A column gives each one a whole
-          line, room for a word of explanation, and somewhere obvious to grow. */}
-      <div className="flex flex-col md:flex-row gap-6 items-start">
-        <nav
-          aria-label="Client portal sections"
-          className="w-full md:w-60 md:shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible"
-        >
-          {tabs.map((t) => {
-            const active = activeTab === t.id
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setActiveTab(t.id)}
-                aria-current={active ? 'page' : undefined}
-                className={`text-left rounded-xl px-4 py-3 transition-colors whitespace-nowrap md:whitespace-normal ${
-                  active
-                    ? 'bg-cyan-50 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-200'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-900/50'
-                }`}
-              >
-                <span className="block text-sm font-semibold">{t.label}</span>
-                {/* Hidden on narrow screens, where the rail turns back into a
-                    scrolling row and there is no room for a second line. */}
-                <span
-                  className={`hidden md:block text-xs mt-0.5 ${
-                    active ? 'text-cyan-700/70 dark:text-cyan-300/70' : 'text-slate-400'
-                  }`}
-                >
-                  {t.hint}
-                </span>
-              </button>
-            )
-          })}
-        </nav>
-
-        <div className="flex-1 min-w-0 space-y-6">
       {loading ? (
         <div className="py-12 text-center text-slate-500">Loading portal data...</div>
       ) : !myClient ? (
@@ -570,8 +560,6 @@ export default function ClientPortalPage() {
           )}
         </>
       )}
-        </div>
-      </div>
 
       {/* ────────────────────── MODAL: INVOICE DETAIL (US-095) ────────────────────── */}
       <Modal

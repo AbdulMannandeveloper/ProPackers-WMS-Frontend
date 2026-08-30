@@ -25,7 +25,7 @@ export const appRoutes: RouteGroup = {
     { path: '/clients', element: ClientsPage, title: 'Clients', requireAuth: true, allowedRoles: ['admin'] },
     { path: '/employees', element: EmployeesPage, title: 'Employees', requireAuth: true, allowedRoles: ['admin'] },
     { path: '/services', element: ServicesPage, title: 'Services', requireAuth: true, allowedRoles: ['admin'] },
-    { path: '/warehouse-locations', element: WarehouseLocationsPage, title: 'Warehouse Locations', requireAuth: true, allowedRoles: ['admin'] },
+    { path: '/warehouse-locations', element: WarehouseLocationsPage, title: 'Warehouse Locations', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/attendance', element: AttendancePage, title: 'Attendance', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/inventory', element: InventoryPage, title: 'Inventory', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/shipments', element: ShipmentsPage, title: 'Shipments', requireAuth: true, allowedRoles: ['admin', 'employee'] },

@@ -20,7 +20,8 @@ const navItems: NavItem[] = [
   { label: 'Clients', href: '/app/clients', icon: Briefcase, adminOnly: true },
   { label: 'Employees', href: '/app/employees', icon: Users, adminOnly: true },
   { label: 'Services', href: '/app/services', icon: Layers, adminOnly: true },
-  { label: 'Warehouse Locations', href: '/app/warehouse-locations', icon: Map, adminOnly: true },
+  // Staff manage the layout of the building they work in.
+  { label: 'Warehouse Locations', href: '/app/warehouse-locations', icon: Map },
   { label: 'Attendance', href: '/app/attendance', icon: Clock },
   { label: 'Inventory', href: '/app/inventory', icon: Package },
   { label: 'Shipments', href: '/app/shipments', icon: Truck },
@@ -31,8 +32,19 @@ const navItems: NavItem[] = [
   { label: 'Profit & Loss', href: '/app/profit-loss', icon: LineChart, adminOnly: true },
 ]
 
+/**
+ * A client's sections, in the real sidebar.
+ *
+ * They were briefly a second column of links inside the page, which left the
+ * actual sidebar holding one item and gave the portal two navigations competing
+ * for the same job.
+ */
 const clientNavItems: NavItem[] = [
-  { label: 'My Portal', href: '/client', icon: Briefcase },
+  { label: 'Overview', href: '/client', icon: LayoutDashboard },
+  { label: 'My Inventory', href: '/client/inventory', icon: Package },
+  { label: 'Billing & Invoices', href: '/client/billing', icon: FileText },
+  { label: 'Services', href: '/client/services', icon: Layers },
+  { label: 'Profile', href: '/client/profile', icon: Briefcase },
 ]
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -69,9 +81,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // The section roots ('/app', '/client') are prefixes of every page beneath
+  // them, so a startsWith match would leave Overview lit on every sub-page.
+  // They match exactly; everything else matches itself or anything nested under
+  // it, so a future detail page still highlights its section.
+  const SECTION_ROOTS = ['/app', '/client']
+
   const isActiveRoute = (href: string) => {
-    if (href === '/app') {
-      return pathname === '/app' || pathname === '/app/'
+    if (SECTION_ROOTS.includes(href)) {
+      return pathname === href || pathname === `${href}/`
     }
     return pathname === href || pathname.startsWith(`${href}/`)
   }
