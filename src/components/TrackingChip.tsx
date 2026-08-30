@@ -74,6 +74,9 @@ export function TrackingChip({
         type="button"
         onClick={copy}
         title={`Copy ${trackingId}`}
+        // Without this the accessible name is just the number, so a screen
+        // reader announces a bare string with no hint that it does anything.
+        aria-label={`Copy tracking number ${trackingId}`}
         className="group inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800"
       >
         <span className="truncate max-w-[14rem]">{trackingId}</span>
