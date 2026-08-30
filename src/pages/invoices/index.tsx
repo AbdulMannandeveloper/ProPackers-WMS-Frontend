@@ -626,6 +626,15 @@ export default function InvoicesPage() {
                 )}
               </div>
               <div>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold mb-0.5">Issued by</span>
+                {/* Which company the PDF goes out as, and therefore which bank
+                    account the client pays into. Shown before approval, because
+                    approval is when the document is rendered and frozen. */}
+                <strong className="text-slate-800 dark:text-slate-200">
+                  {invoicesApi.issuingCompany(selectedInvoice)}
+                </strong>
+              </div>
+              <div>
                 <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold mb-0.5">Status</span>
                 <Badge variant="secondary" className={statusConfig[selectedInvoice.status]?.cls}>
                   {statusConfig[selectedInvoice.status]?.label}
