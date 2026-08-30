@@ -22,6 +22,8 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
+import { TrackingChip } from '@/components/TrackingChip'
+import { COURIERS, validateTrackingId, normaliseTrackingId } from '@/lib/couriers'
 
 export default function ShipmentsPage() {
   const role = useAuthStore((s) => s.role)
@@ -58,6 +60,10 @@ export default function ShipmentsPage() {
 
   // Selected Records
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null)
+
+  // Tracking number editor, inside the details drawer.
+  const [trackingDraft, setTrackingDraft] = useState('')
+  const [savingTracking, setSavingTracking] = useState(false)
 
   // Create Shipment Form State
   const [formClientId, setFormClientId] = useState('')
@@ -264,7 +270,53 @@ export default function ShipmentsPage() {
   // Open Details Checklist
   const handleOpenDetails = (shipment: Shipment) => {
     setSelectedShipment(shipment)
+    setTrackingDraft(shipment.trackingId || '')
     setDetailsModalOpen(true)
+  }
+
+  /**
+   * Staff, and deliberately still available once DISPATCHED — that is normally
+   * when the courier hands over the number. Only CANCELLED is refused, and the
+   * server is the authority on that; this just avoids offering a control that
+   * would 400.
+   */
+  const handleSaveTracking = async (override?: string) => {
+    if (!selectedShipment) return
+
+    // Taken as an argument rather than read from state, because Clear needs to
+    // save a value the state has not committed yet — a deferred call would
+    // otherwise close over the previous draft and re-save the old number.
+    const value = override ?? trackingDraft
+
+    const problem = validateTrackingId(value)
+    if (problem) {
+      showToast(problem, 'error')
+      return
+    }
+
+    const cleaned = normaliseTrackingId(value)
+    if (cleaned === (selectedShipment.trackingId || '')) return
+
+    setSavingTracking(true)
+    try {
+      const updated = await shipmentsApi.setShipmentTracking(
+        selectedShipment.id,
+        cleaned
+      )
+      // Keep the open drawer in step without closing it — the operator is
+      // usually reading the number off a label and may correct it twice.
+      setSelectedShipment(updated)
+      setTrackingDraft(updated.trackingId || '')
+      showToast(cleaned ? 'Tracking number saved.' : 'Tracking number cleared.')
+      await loadData()
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.error || err?.message || 'Could not save the tracking number.',
+        'error'
+      )
+    } finally {
+      setSavingTracking(false)
+    }
   }
 
   // Handle Mark Item as Picked
@@ -481,6 +533,15 @@ export default function ShipmentsPage() {
                         <td className="py-4">
                           <div className="font-medium">{s.courierName}</div>
                           <span className="text-xs text-slate-400 block">Pkg: {s.packagingType}</span>
+                          {s.trackingId ? (
+                            <div className="mt-1">
+                              <TrackingChip
+                                trackingId={s.trackingId}
+                                courierName={s.courierName}
+                                onNotify={showToast}
+                              />
+                            </div>
+                          ) : null}
                         </td>
                         <td className="py-4 text-center font-bold">
                           {s.shipmentItems?.length || 0} items
@@ -612,10 +673,11 @@ export default function ShipmentsPage() {
                 Courier Carrier *
               </label>
               <Select value={formCourierName} onChange={(e) => setFormCourierName(e.target.value)} required>
-                <option value="DPD">DPD Next-Day</option>
-                <option value="DHL">DHL Express</option>
-                <option value="FedEx">FedEx International</option>
-                <option value="Royal Mail">Royal Mail Tracked 24</option>
+                {COURIERS.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
               </Select>
             </div>
           </div>
@@ -870,6 +932,81 @@ export default function ShipmentsPage() {
                   {selectedShipment.status === 'READY_FOR_DISPATCH' ? 'READY' : selectedShipment.status}
                 </Badge>
               </div>
+            </div>
+
+            {/* Courier consignment number. Editable by any staff member, in every
+                status but CANCELLED — the courier normally issues it at the
+                moment of dispatch, which is exactly when the rest of the
+                shipment freezes. */}
+            <div className="rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                    Courier Tracking Number
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Click the number to copy it, or the arrow to open{' '}
+                    {selectedShipment.courierName}.
+                  </p>
+                </div>
+                {selectedShipment.trackingId ? (
+                  <TrackingChip
+                    trackingId={selectedShipment.trackingId}
+                    courierName={selectedShipment.courierName}
+                    onNotify={showToast}
+                  />
+                ) : (
+                  <span className="text-xs text-slate-400 italic">Not recorded yet</span>
+                )}
+              </div>
+
+              {isStaff && selectedShipment.status !== 'CANCELLED' && (
+                <div className="flex items-end gap-2 flex-wrap">
+                  <div className="flex-1 min-w-[12rem]">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                      {selectedShipment.trackingId ? 'Correct the number' : 'Add the number'}
+                    </label>
+                    <Input
+                      value={trackingDraft}
+                      onChange={(e) => setTrackingDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleSaveTracking()
+                        }
+                      }}
+                      placeholder="Scan or type the consignment number"
+                      className="font-mono"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <Button
+                    onClick={() => handleSaveTracking()}
+                    disabled={
+                      savingTracking ||
+                      normaliseTrackingId(trackingDraft) ===
+                        (selectedShipment.trackingId || '')
+                    }
+                  >
+                    {savingTracking ? 'Saving…' : 'Save'}
+                  </Button>
+                  {selectedShipment.trackingId && (
+                    <Button
+                      variant="outline"
+                      disabled={savingTracking}
+                      onClick={() => {
+                        // Clearing is a save of the empty value, not just a
+                        // blanked box — otherwise the number stays on the row.
+                        setTrackingDraft('')
+                        handleSaveTracking('')
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Checklist Table */}

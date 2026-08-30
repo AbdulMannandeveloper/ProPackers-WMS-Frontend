@@ -105,17 +105,36 @@ export const createShipment = (payload: {
 }): Promise<Shipment> =>
   httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
 
-/** Commercial and identity details. Admin only, and refused once dispatched. */
+/**
+ * Commercial and identity details. Admin only, and refused once dispatched.
+ * trackingId is NOT settable here — it has its own endpoint below.
+ */
 export const updateShipment = (
   id: string,
   payload: {
     shipmentType?: string
     packagingType?: string
     courierName?: string
-    trackingId?: string | null
   }
 ): Promise<Shipment> =>
   httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
+
+/**
+ * The courier consignment number.
+ *
+ * Staff, not admin-only — the person handing the parcel over is the one holding
+ * the label. Allowed in every status but CANCELLED, including DISPATCHED, which
+ * is when couriers usually issue it. Send an empty string to clear a mis-key.
+ */
+export const setShipmentTracking = (
+  id: string,
+  trackingId: string | null
+): Promise<Shipment> =>
+  httpClient({
+    method: 'PUT',
+    url: `${BASE}/${id}/tracking`,
+    data: { trackingId },
+  })
 
 // ─── Lifecycle transitions ────────────────────────────────────────────────────
 // Each is guarded server-side against the state machine; an illegal hop comes
@@ -164,6 +183,7 @@ export default {
   getShipmentById,
   createShipment,
   updateShipment,
+  setShipmentTracking,
   markShipmentReady,
   dispatchShipment,
   cancelShipment,
