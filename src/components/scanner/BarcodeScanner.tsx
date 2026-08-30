@@ -63,6 +63,10 @@ export function BarcodeScanner({
   const [manual, setManual] = useState('')
   const [slowHint, setSlowHint] = useState(false)
 
+  // A captured frame that did not decode. Held only while the operator looks at
+  // it — nothing is uploaded, and it dies with the modal.
+  const [shot, setShot] = useState<{ photo?: string; message: string } | null>(null)
+
   const {
     videoRef,
     status,
@@ -73,7 +77,41 @@ export function BarcodeScanner({
     torchAvailable,
     toggleTorch,
     selectCamera,
+    capture,
+    capturing,
+    resumeAfterCapture,
   } = useBarcodeScanner({ active: open, onScan, continuous })
+
+  /**
+   * Takes a still and reads it at full resolution.
+   *
+   * Worth having beside the live loop rather than instead of it: the live decode
+   * runs on the scaled-down preview and blurs when the phone moves, so a frozen
+   * full-resolution frame is what gets a curved or glared label read.
+   */
+  const takeShot = async () => {
+    const result = await capture()
+
+    if (result.found) {
+      setShot(null)
+      return // onScan has already fired; the caller closes the dialog.
+    }
+
+    setShot({
+      photo: result.photo,
+      message:
+        result.reason === 'not-ready'
+          ? 'The camera has not started yet — give it a moment and try again.'
+          : result.reason === 'error'
+            ? result.detail || 'Could not read that photo.'
+            : 'No barcode found in that photo. Fill more of the frame with the label, move out of any glare, or type the code below.',
+    })
+  }
+
+  const retake = () => {
+    setShot(null)
+    resumeAfterCapture()
+  }
 
   // After a while without a read, say so rather than leaving the operator
   // wondering whether it is working at all.
@@ -91,6 +129,7 @@ export function BarcodeScanner({
     if (!open) {
       setManual('')
       setSlowHint(false)
+      setShot(null)
     }
   }, [open])
 
@@ -121,7 +160,32 @@ export function BarcodeScanner({
       }
     >
       <div className="space-y-4">
-        {!failure && (
+        {!failure && shot && (
+          <div className="space-y-3">
+            <div className="relative overflow-hidden rounded-2xl bg-slate-900 aspect-[4/3]">
+              {shot.photo ? (
+                <img
+                  src={shot.photo}
+                  alt="The photo just captured, which did not contain a readable barcode"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="grid h-full place-items-center text-sm text-white/70">
+                  No preview available
+                </div>
+              )}
+            </div>
+            {/* Showing the shot matters: the operator can see whether the label
+                was blurred, cut off or washed out, which an error message alone
+                never conveys. */}
+            <p className="text-sm text-slate-600 dark:text-slate-400">{shot.message}</p>
+            <Button type="button" variant="secondary" onClick={retake} className="w-full">
+              Retake
+            </Button>
+          </div>
+        )}
+
+        {!failure && !shot && (
           <div className="relative overflow-hidden rounded-2xl bg-slate-900 aspect-[4/3]">
             <video
               ref={videoRef}
@@ -150,6 +214,17 @@ export function BarcodeScanner({
                 {torchOn ? 'Light off' : 'Light on'}
               </button>
             )}
+
+            {/* For the labels the live loop cannot manage: hold still, take one
+                frame, read it at the camera's full resolution. */}
+            <button
+              type="button"
+              onClick={() => void takeShot()}
+              disabled={capturing || status !== 'scanning'}
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/95 px-5 py-2 text-sm font-semibold text-slate-900 shadow-lg backdrop-blur transition disabled:opacity-50"
+            >
+              {capturing ? 'Reading…' : 'Capture photo'}
+            </button>
           </div>
         )}
 
@@ -171,7 +246,7 @@ export function BarcodeScanner({
           </div>
         )}
 
-        {slowHint && status === 'scanning' && (
+        {slowHint && status === 'scanning' && !shot && (
           <p className="text-center text-xs text-slate-500 dark:text-slate-400">
             Still looking. Try moving closer, steadying the label, or turning the light
             on — or type the code below.

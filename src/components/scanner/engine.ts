@@ -60,6 +60,77 @@ export const negotiateFormats = async (
 }
 
 /**
+ * The true pixel size of the video frame.
+ *
+ * videoWidth/videoHeight are the track's own resolution; clientWidth/Height are
+ * whatever CSS box it happens to be painted into, which on a phone is usually
+ * much smaller. Capturing at the CSS size would throw away most of the pixels
+ * across the bars — which is the entire reason a still decodes where the live
+ * preview does not.
+ *
+ * Zero until the first frame arrives, so a capture before the camera is ready
+ * has to be refused rather than silently producing an empty canvas.
+ */
+export const frameSize = (video: {
+  videoWidth?: number
+  videoHeight?: number
+}): { width: number; height: number } => ({
+  width: Math.floor(video?.videoWidth ?? 0),
+  height: Math.floor(video?.videoHeight ?? 0),
+})
+
+export const isFrameReady = (video: { videoWidth?: number; videoHeight?: number }) => {
+  const { width, height } = frameSize(video)
+  return width > 0 && height > 0
+}
+
+export type CaptureOutcome =
+  | { found: true; value: string }
+  | { found: false; reason: 'no-code' | 'not-ready' | 'error'; detail?: string }
+
+/**
+ * Reads a barcode out of a still frame, using the same engine the live loop
+ * chose.
+ *
+ * Deliberately the same engine: a device that scans live with the native
+ * detector but falls back to zxing for stills would succeed and fail for
+ * reasons no operator could ever explain.
+ *
+ * `detector` is the already-constructed native BarcodeDetector when the engine
+ * is native — reusing it avoids re-negotiating formats on every shot.
+ */
+export const decodeFromCanvas = async (
+  engine: ScannerEngine,
+  canvas: HTMLCanvasElement,
+  detector?: { detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]> },
+): Promise<CaptureOutcome> => {
+  try {
+    if (engine === 'native' && detector) {
+      const results = await detector.detect(canvas)
+      const value = results?.[0]?.rawValue
+      return value ? { found: true, value } : { found: false, reason: 'no-code' }
+    }
+
+    const { BrowserMultiFormatReader } = await import('@zxing/browser')
+    const reader = new BrowserMultiFormatReader()
+    const result = reader.decodeFromCanvas(canvas)
+    const value = result?.getText?.()
+    return value ? { found: true, value } : { found: false, reason: 'no-code' }
+  } catch (err) {
+    // zxing throws NotFoundException rather than returning null when the image
+    // holds no barcode. That is the ordinary outcome of a blurred photo, not a
+    // fault, so it must not surface as an error.
+    const name = (err as { name?: string })?.name ?? ''
+    if (/NotFound/i.test(name)) return { found: false, reason: 'no-code' }
+    return {
+      found: false,
+      reason: 'error',
+      detail: (err as Error)?.message,
+    }
+  }
+}
+
+/**
  * A barcode sits in frame for many frames, so a naive handler fires a lookup per
  * frame. This suppresses a repeat of the same value for `windowMs`, while
  * letting a different code through immediately — scanning two labels in quick

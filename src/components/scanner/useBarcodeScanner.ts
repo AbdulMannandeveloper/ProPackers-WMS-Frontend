@@ -10,7 +10,11 @@ import {
 import {
   chooseEngine,
   createScanDeduper,
+  decodeFromCanvas,
+  frameSize,
+  isFrameReady,
   negotiateFormats,
+  type CaptureOutcome,
   type ScannerEngine,
 } from './engine'
 
@@ -58,6 +62,18 @@ export const useBarcodeScanner = ({ active, onScan, continuous = false }: Option
   const [restartToken, setRestartToken] = useState(0)
   const [torchOn, setTorchOn] = useState(false)
   const [torchAvailable, setTorchAvailable] = useState(false)
+  const [capturing, setCapturing] = useState(false)
+
+  // The native detector built by the live loop, reused for stills so a capture
+  // does not re-negotiate formats on every shot.
+  const detectorRef = useRef<{
+    detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]>
+  } | null>(null)
+
+  // While a captured frame is being reviewed the live loop must not keep
+  // decoding: two decoders on one track is how a stale value fires after the
+  // operator has already moved on to the next label.
+  const pausedRef = useRef(false)
   const [detail, setDetail] = useState<string | null>(null)
 
   /** Releases the camera. Leaving a track live keeps the indicator light on. */
@@ -218,9 +234,16 @@ export const useBarcodeScanner = ({ active, onScan, continuous = false }: Option
         const detector = new Detector({ formats }) as unknown as {
           detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]>
         }
+        detectorRef.current = detector
 
         const tick = async () => {
           if (cancelled || !videoRef.current) return
+          if (pausedRef.current) {
+            // Still scheduled, just not decoding — so resuming needs no restart
+            // of the camera.
+            rafRef.current = requestAnimationFrame(tick)
+            return
+          }
           try {
             const results = await detector.detect(videoRef.current)
             if (results?.[0]?.rawValue) handleHit(results[0].rawValue)
@@ -240,7 +263,7 @@ export const useBarcodeScanner = ({ active, onScan, continuous = false }: Option
       const controls = await reader.decodeFromVideoElement(
         videoRef.current as HTMLVideoElement,
         (result) => {
-          if (result) handleHit(result.getText())
+          if (result && !pausedRef.current) handleHit(result.getText())
         },
       )
       stopFnRef.current = () => controls.stop()
@@ -276,6 +299,75 @@ export const useBarcodeScanner = ({ active, onScan, continuous = false }: Option
     }
   }, [torchOn])
 
+  /**
+   * Takes a still from the live track and reads it at full resolution.
+   *
+   * The live loop decodes the preview, which the browser scales down and which
+   * carries motion blur from a handheld phone. A frozen frame at the track's own
+   * resolution has more pixels across the bars and no smear, which is usually
+   * the whole difference on a curved or glared label.
+   *
+   * Returns the outcome plus the frame as a data URL, so a miss can be shown to
+   * the operator instead of being a silent no-op. Nothing is uploaded or stored.
+   */
+  const capture = useCallback(async (): Promise<
+    CaptureOutcome & { photo?: string }
+  > => {
+    const video = videoRef.current
+    if (!video || !isFrameReady(video)) {
+      return { found: false, reason: 'not-ready' }
+    }
+
+    setCapturing(true)
+    pausedRef.current = true
+    try {
+      const { width, height } = frameSize(video)
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        return { found: false, reason: 'error', detail: 'Could not read the frame.' }
+      }
+      ctx.drawImage(video, 0, 0, width, height)
+
+      const outcome = await decodeFromCanvas(
+        engine ?? 'zxing',
+        canvas,
+        detectorRef.current ?? undefined,
+      )
+
+      if (outcome.found) {
+        // Straight down the same path a live read takes, deduper included, so a
+        // capture of a label just scanned does not fire twice.
+        pausedRef.current = false
+        if (deduperRef.current.accept(outcome.value)) {
+          onScanRef.current(outcome.value)
+        }
+        return outcome
+      }
+
+      // Kept paused: the operator is now looking at the photo, and the live loop
+      // resuming underneath would be confusing. resumeAfterCapture() restarts it.
+      let photo: string | undefined
+      try {
+        photo = canvas.toDataURL('image/jpeg', 0.85)
+      } catch {
+        // A tainted canvas cannot be exported. The decode still worked, so this
+        // only costs the preview of the failed shot.
+      }
+      return { ...outcome, photo }
+    } finally {
+      setCapturing(false)
+    }
+  }, [engine])
+
+  /** Returns to live decoding after a captured frame has been dismissed. */
+  const resumeAfterCapture = useCallback(() => {
+    pausedRef.current = false
+  }, [])
+
   const selectCamera = useCallback((deviceId: string) => {
     // Persisted first: the effect reads the remembered id when it restarts.
     rememberCamera(deviceId)
@@ -294,5 +386,8 @@ export const useBarcodeScanner = ({ active, onScan, continuous = false }: Option
     torchAvailable,
     toggleTorch,
     selectCamera,
+    capture,
+    capturing,
+    resumeAfterCapture,
   }
 }
