@@ -203,11 +203,11 @@ export default function ClientPortalPage() {
   }, [invoices, billingStatusFilter, billingStartDate, billingEndDate])
 
   const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'inventory', label: 'My Inventory' },
-    { id: 'billing', label: 'Billing & Invoices' },
-    { id: 'services', label: 'Services' },
-    { id: 'profile', label: 'Profile' },
+    { id: 'overview', label: 'Overview', hint: 'At a glance' },
+    { id: 'inventory', label: 'My Inventory', hint: 'Stock we hold for you' },
+    { id: 'billing', label: 'Billing & Invoices', hint: 'Statements and payments' },
+    { id: 'services', label: 'Services', hint: 'What you are signed up for' },
+    { id: 'profile', label: 'Profile', hint: 'Your account details' },
   ] as const
 
   return (
@@ -235,24 +235,46 @@ export default function ClientPortalPage() {
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-slate-200 dark:border-slate-800 flex gap-6 overflow-x-auto">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setActiveTab(t.id)}
-            className={`pb-3 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
-              activeTab === t.id
-                ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
-                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Side navigation.
+          Vertical rather than a row of tabs: five labels of very uneven length
+          crammed onto one line read as a wall, and "Billing & Invoices" was
+          being squeezed against its neighbours. A column gives each one a whole
+          line, room for a word of explanation, and somewhere obvious to grow. */}
+      <div className="flex flex-col md:flex-row gap-6 items-start">
+        <nav
+          aria-label="Client portal sections"
+          className="w-full md:w-60 md:shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible"
+        >
+          {tabs.map((t) => {
+            const active = activeTab === t.id
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveTab(t.id)}
+                aria-current={active ? 'page' : undefined}
+                className={`text-left rounded-xl px-4 py-3 transition-colors whitespace-nowrap md:whitespace-normal ${
+                  active
+                    ? 'bg-cyan-50 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-200'
+                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-900/50'
+                }`}
+              >
+                <span className="block text-sm font-semibold">{t.label}</span>
+                {/* Hidden on narrow screens, where the rail turns back into a
+                    scrolling row and there is no room for a second line. */}
+                <span
+                  className={`hidden md:block text-xs mt-0.5 ${
+                    active ? 'text-cyan-700/70 dark:text-cyan-300/70' : 'text-slate-400'
+                  }`}
+                >
+                  {t.hint}
+                </span>
+              </button>
+            )
+          })}
+        </nav>
 
+        <div className="flex-1 min-w-0 space-y-6">
       {loading ? (
         <div className="py-12 text-center text-slate-500">Loading portal data...</div>
       ) : !myClient ? (
@@ -454,7 +476,16 @@ export default function ClientPortalPage() {
                                   {inv.status}
                                 </Badge>
                               </td>
-                              <td className="py-3 text-right font-bold">£{Number(inv.totalAmount).toFixed(2)}</td>
+                              {/* totalAmount is ex-tax throughout the system, so
+                                  showing it alone would understate what is owed. */}
+                              <td className="py-3 text-right font-bold">
+                                £{invoicesApi.grandTotal(inv).toFixed(2)}
+                                {Number(inv.taxAmount ?? 0) > 0 && (
+                                  <span className="block text-[11px] font-normal text-slate-400">
+                                    incl. £{Number(inv.taxAmount).toFixed(2)} tax
+                                  </span>
+                                )}
+                              </td>
                               <td className="py-3 text-right">
                                 <div className="flex justify-end gap-2">
                                   <Button size="sm" variant="secondary" onClick={() => handleOpenInvoice(inv)}>
@@ -539,6 +570,8 @@ export default function ClientPortalPage() {
           )}
         </>
       )}
+        </div>
+      </div>
 
       {/* ────────────────────── MODAL: INVOICE DETAIL (US-095) ────────────────────── */}
       <Modal
@@ -573,8 +606,20 @@ export default function ClientPortalPage() {
                 </Badge>
               </div>
               <div>
-                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Total Amount</span>
-                <strong className="text-lg">£{Number(selectedInvoice.totalAmount).toFixed(2)}</strong>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">
+                  {Number(selectedInvoice.taxAmount ?? 0) > 0 ? 'Total Due' : 'Total Amount'}
+                </span>
+                <strong className="text-lg">
+                  £{invoicesApi.grandTotal(selectedInvoice).toFixed(2)}
+                </strong>
+                {Number(selectedInvoice.taxAmount ?? 0) > 0 && (
+                  <span className="block text-[11px] text-slate-400">
+                    £{Number(selectedInvoice.totalAmount).toFixed(2)} + £
+                    {Number(selectedInvoice.taxAmount).toFixed(2)} tax
+                    {selectedInvoice.taxRate != null &&
+                      ` (${Number(selectedInvoice.taxRate)}%)`}
+                  </span>
+                )}
               </div>
               <div>
                 <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Created</span>

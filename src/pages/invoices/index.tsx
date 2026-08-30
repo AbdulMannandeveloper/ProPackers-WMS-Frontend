@@ -67,19 +67,71 @@ export default function InvoicesPage() {
   const [chargePrice, setChargePrice] = useState<number | ''>('')
   const [chargeDate, setChargeDate] = useState(new Date().toISOString().split('T')[0])
   const [chargeSaving, setChargeSaving] = useState(false)
+  // The platform tax rate. Held here so the table can show what ticking the box
+  // would add, before it is ticked.
+  const [taxRate, setTaxRate] = useState<number>(20)
+  const [taxRateDraft, setTaxRateDraft] = useState<string>('')
+  const [savingRate, setSavingRate] = useState(false)
+  const [togglingTax, setTogglingTax] = useState<string | null>(null)
+
   const [clientServices, setClientServices] = useState<any[]>([])
   const [selectedClientServiceId, setSelectedClientServiceId] = useState('')
+
+  /** Changes the rate future invoices are taxed at. Already-taxed ones keep theirs. */
+  const handleSaveTaxRate = async () => {
+    const rate = Number(taxRateDraft)
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      showToast('Tax rate must be a number between 0 and 100.', 'error')
+      return
+    }
+
+    setSavingRate(true)
+    try {
+      const { rate: saved } = await invoicesApi.setTaxRate(rate)
+      setTaxRate(saved)
+      setTaxRateDraft(String(saved))
+      showToast(
+        `Tax rate set to ${saved}%. Invoices already taxed keep the rate they were issued at.`,
+      )
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.error || err?.message || 'Could not save the tax rate.',
+        'error',
+      )
+    } finally {
+      setSavingRate(false)
+    }
+  }
+
+  /** Applies or removes tax on one draft invoice. */
+  const handleToggleTax = async (invoice: MonthlyInvoice, applied: boolean) => {
+    setTogglingTax(invoice.id)
+    try {
+      await invoicesApi.setInvoiceTax(invoice.id, applied)
+      await loadData()
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.error || err?.message || 'Could not change the tax.',
+        'error',
+      )
+    } finally {
+      setTogglingTax(null)
+    }
+  }
 
   // ── Load ──
   const loadData = async () => {
     setLoading(true)
     try {
-      const [invoicesData, clientsData] = await Promise.all([
+      const [invoicesData, clientsData, rateData] = await Promise.all([
         invoicesApi.getAllInvoices(),
         clientsApi.getAllClients().catch(() => [] as Client[]),
+        invoicesApi.getTaxRate().catch(() => ({ rate: 20 })),
       ])
       setAllInvoices(invoicesData || [])
       setClients(clientsData || [])
+      setTaxRate(rateData?.rate ?? 20)
+      setTaxRateDraft(String(rateData?.rate ?? 20))
     } catch (err: any) {
       showToast(err?.response?.data?.error || err?.message || 'Failed to load invoices.', 'error')
     } finally {
@@ -369,6 +421,40 @@ export default function InvoicesPage() {
       {/* Invoice Table */}
       <Card className="shadow-md border-slate-200 dark:border-slate-800">
         <CardContent className="p-0">
+          {/* The platform tax rate. Changing it affects invoices taxed from now
+              on — an invoice already taxed keeps the rate it was issued at, so a
+              rate change never restates what a client has already been sent. */}
+          {isAdmin && (
+            <div className="flex items-end gap-3 flex-wrap border-b border-slate-100 dark:border-slate-800 px-6 py-4">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Platform tax rate (%)
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  className="w-28"
+                  value={taxRateDraft}
+                  onChange={(e) => setTaxRateDraft(e.target.value)}
+                  aria-label="Platform tax rate percentage"
+                />
+              </div>
+              <Button
+                variant="outline"
+                disabled={savingRate || taxRateDraft === String(taxRate)}
+                onClick={() => void handleSaveTaxRate()}
+              >
+                {savingRate ? 'Saving…' : 'Save rate'}
+              </Button>
+              <p className="text-xs text-slate-400 flex-1 min-w-[16rem]">
+                Applied per invoice with the Tax box below, while it is still a
+                draft. Invoices already taxed keep the rate they were issued at.
+              </p>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-16 text-center text-slate-400">Loading billing records...</div>
           ) : (
@@ -379,7 +465,9 @@ export default function InvoicesPage() {
                     <th className="px-6 py-4 font-semibold">Client</th>
                     <th className="px-6 py-4 font-semibold">Billing Period</th>
                     <th className="px-6 py-4 font-semibold text-center">Line Items</th>
-                    <th className="px-6 py-4 font-semibold text-right">Total Amount</th>
+                    <th className="px-6 py-4 font-semibold text-right">Subtotal</th>
+                    <th className="px-6 py-4 font-semibold text-center">Tax</th>
+                    <th className="px-6 py-4 font-semibold text-right">Total Due</th>
                     <th className="px-6 py-4 font-semibold text-center">Status</th>
                     <th className="px-6 py-4 font-semibold">Created</th>
                     <th className="px-6 py-4 font-semibold text-right">Actions</th>
@@ -388,7 +476,7 @@ export default function InvoicesPage() {
                 <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
                   {filteredInvoices.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
                         {filterStatus !== 'ALL' || filterClientId
                           ? 'No invoices match your filters.'
                           : 'No invoices yet. Dispatch a shipment to auto-generate the first one.'}
@@ -411,8 +499,40 @@ export default function InvoicesPage() {
                           <td className="px-6 py-4 text-center font-bold text-slate-600 dark:text-slate-400">
                             {inv.lineItems?.length ?? 0}
                           </td>
-                          <td className="px-6 py-4 text-right font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                          <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 tabular-nums">
                             {fmt(inv.totalAmount)}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            {/* Only while DRAFT: once approved the invoice has
+                                been sent, and the amount asked for must not move
+                                underneath the client. */}
+                            {inv.status === 'DRAFT' && isAdmin ? (
+                              <label className="inline-flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="size-4 rounded border-slate-300"
+                                  checked={Boolean(inv.taxApplied)}
+                                  disabled={togglingTax === inv.id}
+                                  aria-label={`Apply ${taxRate}% tax to this invoice`}
+                                  onChange={(e) => void handleToggleTax(inv, e.target.checked)}
+                                />
+                                <span className="text-xs text-slate-500 tabular-nums">
+                                  {inv.taxApplied ? fmt(inv.taxAmount ?? 0) : `${taxRate}%`}
+                                </span>
+                              </label>
+                            ) : Number(inv.taxAmount ?? 0) > 0 ? (
+                              <span className="text-xs text-slate-500 tabular-nums">
+                                {fmt(inv.taxAmount ?? 0)}
+                                {inv.taxRate != null && (
+                                  <span className="text-slate-400"> ({Number(inv.taxRate)}%)</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-right font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                            {fmt(invoicesApi.grandTotal(inv))}
                           </td>
                           <td className="px-6 py-4 text-center">
                             <Badge variant="secondary" className={sc.cls}>{sc.label}</Badge>
@@ -492,8 +612,18 @@ export default function InvoicesPage() {
                 <strong className="text-slate-800 dark:text-slate-200">{fmtDate(selectedInvoice.billingPeriod)}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold mb-0.5">Total Amount</span>
-                <strong className="text-lg text-slate-900 dark:text-slate-100">{fmt(selectedInvoice.totalAmount)}</strong>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold mb-0.5">
+                  {Number(selectedInvoice.taxAmount ?? 0) > 0 ? 'Total Due' : 'Total Amount'}
+                </span>
+                <strong className="text-lg text-slate-900 dark:text-slate-100">
+                  {fmt(invoicesApi.grandTotal(selectedInvoice))}
+                </strong>
+                {Number(selectedInvoice.taxAmount ?? 0) > 0 && (
+                  <span className="block text-xs text-slate-400">
+                    {fmt(selectedInvoice.totalAmount)} + {fmt(selectedInvoice.taxAmount ?? 0)} tax
+                    {selectedInvoice.taxRate != null && ` (${Number(selectedInvoice.taxRate)}%)`}
+                  </span>
+                )}
               </div>
               <div>
                 <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold mb-0.5">Status</span>

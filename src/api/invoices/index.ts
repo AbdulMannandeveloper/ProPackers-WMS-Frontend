@@ -27,7 +27,15 @@ export type MonthlyInvoice = {
   id: string
   clientId: string
   billingPeriod: string
+  /**
+   * The sum of the line items, EXCLUDING tax. Deliberately ex-tax: the profit
+   * and loss report reads this as company earnings, and tax is collected for
+   * HMRC rather than earned. What the client owes is totalAmount + taxAmount.
+   */
   totalAmount: number | string
+  taxApplied?: boolean
+  taxRate?: number | string | null
+  taxAmount?: number | string
   status: InvoiceStatus
   pdfLink?: string | null
   paidAt?: string | null
@@ -93,6 +101,29 @@ export const createLineItem = (
 ): Promise<InvoiceLineItem> =>
   httpClient({ method: 'POST', url: `${BASE}/${invoiceId}/line-items`, data: payload })
 
+/** The platform tax rate, as a percentage. Staff may read it. */
+export const getTaxRate = (): Promise<{ rate: number }> =>
+  httpClient({ method: 'GET', url: `${BASE}/tax-rate` })
+
+/** Admin only. 0-100. */
+export const setTaxRate = (rate: number): Promise<{ rate: number }> =>
+  httpClient({ method: 'PUT', url: `${BASE}/tax-rate`, data: { rate } })
+
+/**
+ * Applies or removes tax on a DRAFT invoice. The rate in force at the moment it
+ * is applied is frozen onto the invoice, so a later change to the platform rate
+ * does not restate it.
+ */
+export const setInvoiceTax = (id: string, applied: boolean): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/tax`, data: { applied } })
+
+/** What the client actually owes: the ex-tax total plus any tax. */
+export const grandTotal = (invoice: {
+  totalAmount: number | string
+  taxAmount?: number | string
+}): number =>
+  Number(invoice.totalAmount ?? 0) + Number(invoice.taxAmount ?? 0)
+
 export const deleteLineItem = (invoiceId: string, lineItemId: string): Promise<{ message: string }> =>
   httpClient({ method: 'DELETE', url: `${BASE}/${invoiceId}/line-items/${lineItemId}` })
 
@@ -108,4 +139,8 @@ export default {
   getLineItems,
   createLineItem,
   deleteLineItem,
+  getTaxRate,
+  setTaxRate,
+  setInvoiceTax,
+  grandTotal,
 }
