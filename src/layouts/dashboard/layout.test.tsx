@@ -14,6 +14,7 @@ import { MemoryRouter } from 'react-router'
 
 import DashboardLayout from './layout'
 import { useAuthStore } from '@/stores/auth'
+import { clientRoutes } from '@/routes/client'
 
 const asRole = (role: 'admin' | 'employee' | 'client') => {
   useAuthStore.setState({
@@ -64,11 +65,20 @@ describe('a client', () => {
     expect(hrefs).toContain('/client/inventory')
   })
 
-  it('can reach every section from the sidebar', () => {
-    // The portal briefly had a second column of links inside the page while the
-    // real sidebar held one item.
+  it('can reach every portal route from the sidebar', () => {
+    // Derived from the route table rather than a hardcoded count, so adding a
+    // section without a link fails here instead of shipping unreachable. The
+    // portal briefly had a second column of links inside the page while the real
+    // sidebar held one item, and a bare number would not have caught that.
+    const expected = clientRoutes.routes.map((r) =>
+      r.path === '/' ? '/client' : `/client${r.path}`
+    )
     renderNav()
-    expect(linkHrefs()).toHaveLength(5)
+
+    for (const href of expected) {
+      expect(linkHrefs()).toContain(href)
+    }
+    expect(linkHrefs()).toHaveLength(expected.length)
   })
 
   it('is shown nothing outside the portal', () => {

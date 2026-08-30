@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useLocation } from 'react-router'
+import { TrackingChip } from '@/components/TrackingChip'
 import { useAuthStore } from '@/stores/auth'
 import {
   clients as apiClients,
@@ -7,9 +8,11 @@ import {
   stock as stockApi,
   inventory as inventoryApi,
   invoices as invoicesApi,
+  shipments as shipmentsApi,
 } from '@/api'
 import clientServicesApi from '@/api/clientServices'
 import type { MonthlyInvoice, InvoiceLineItem } from '@/api/invoices'
+import type { Shipment } from '@/api/shipments'
 import type { Product } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
 import type { InventoryLedgerEntry } from '@/api/inventory'
@@ -27,12 +30,19 @@ import {
   Modal,
 } from '@/components/Shared Components'
 
-type Section = 'overview' | 'inventory' | 'billing' | 'services' | 'profile'
+type Section =
+  | 'overview'
+  | 'inventory'
+  | 'shipments'
+  | 'billing'
+  | 'services'
+  | 'profile'
 
 /** Which portal section each address shows. Mirrors src/routes/client.ts. */
 const SECTION_BY_PATH: Record<string, Section> = {
   '/client': 'overview',
   '/client/inventory': 'inventory',
+  '/client/shipments': 'shipments',
   '/client/billing': 'billing',
   '/client/services': 'services',
   '/client/profile': 'profile',
@@ -41,6 +51,7 @@ const SECTION_BY_PATH: Record<string, Section> = {
 const SECTION_TITLES: Record<Section, string> = {
   overview: 'Client Portal',
   inventory: 'My Inventory',
+  shipments: 'Shipments',
   billing: 'Billing & Invoices',
   services: 'Services',
   profile: 'Profile',
@@ -49,6 +60,7 @@ const SECTION_TITLES: Record<Section, string> = {
 const SECTION_BLURBS: Record<Section, string> = {
   overview: 'View your inventory, services, and billing information.',
   inventory: 'Stock we are holding for you right now.',
+  shipments: 'Orders we have packed and sent for you.',
   billing: 'Your statements, invoices and payment history.',
   services: 'The services you are signed up for.',
   profile: 'Your account and contact details.',
@@ -88,6 +100,9 @@ export default function ClientPortalPage() {
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([])
   const [lineItemsLoading, setLineItemsLoading] = useState(false)
 
+  // Shipments — read-only. The one thing a client actually rings about.
+  const [shipments, setShipments] = useState<Shipment[]>([])
+
   // Ledger (US-063)
   const [, setLedgers] = useState<InventoryLedgerEntry[]>([])
 
@@ -119,13 +134,17 @@ export default function ClientPortalPage() {
 
         // Load everything in parallel. Products and stock come back already
         // narrowed to this client by the API.
-        const [clientSvcList, prodsData, stockData, invoiceData, ledgerData] = await Promise.all([
-          clientServicesApi.getClientServicesByClientId(client.id).catch(() => []),
-          productsApi.getAllProducts().catch(() => []),
-          stockApi.getAllStockLevels().catch(() => []),
-          invoicesApi.getInvoicesByClientId(client.id).catch(() => []),
-          inventoryApi.getInventoryLedgerByClientId(client.id).catch(() => []),
-        ])
+        const [clientSvcList, prodsData, stockData, invoiceData, ledgerData, shipmentData] =
+          await Promise.all([
+            clientServicesApi.getClientServicesByClientId(client.id).catch(() => []),
+            productsApi.getAllProducts().catch(() => []),
+            stockApi.getAllStockLevels().catch(() => []),
+            invoicesApi.getInvoicesByClientId(client.id).catch(() => []),
+            inventoryApi.getInventoryLedgerByClientId(client.id).catch(() => []),
+            shipmentsApi.getShipmentsByClientId(client.id).catch(() => []),
+          ])
+
+        setShipments(Array.isArray(shipmentData) ? shipmentData : [])
 
         // Services (description/unit arrive on the included service relation)
         const cs = Array.isArray(clientSvcList) ? clientSvcList : []
@@ -402,6 +421,88 @@ export default function ClientPortalPage() {
           )}
 
           {/* ──────────────────── BILLING TAB (US-094, US-095, US-096, US-097) ──────────────────── */}
+          {/* ──────────────────── SHIPMENTS ──────────────────── */}
+          {activeTab === 'shipments' && (
+            <Card>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-slate-100 text-slate-500">
+                      <tr>
+                        <th className="p-4 font-semibold">Order</th>
+                        <th className="p-4 font-semibold">Courier</th>
+                        <th className="p-4 font-semibold text-center">Items</th>
+                        <th className="p-4 font-semibold">Tracking</th>
+                        <th className="p-4 font-semibold">Raised</th>
+                        <th className="p-4 font-semibold text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {shipments.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-10 text-center text-slate-400">
+                            No shipments yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        shipments.map((sh) => (
+                          <tr key={sh.id}>
+                            <td className="p-4 font-mono font-semibold text-slate-800">
+                              {sh.id.slice(0, 8).toUpperCase()}
+                            </td>
+                            <td className="p-4">
+                              <div>{sh.courierName}</div>
+                              <span className="block text-xs text-slate-400">
+                                {sh.packagingType}
+                              </span>
+                            </td>
+                            {/* Item count only. Which bin they came out of is our
+                                warehouse layout, not the client's business. */}
+                            <td className="p-4 text-center font-bold">
+                              {sh.shipmentItems?.length ?? 0}
+                            </td>
+                            <td className="p-4">
+                              {sh.trackingId ? (
+                                <TrackingChip
+                                  trackingId={sh.trackingId}
+                                  courierName={sh.courierName}
+                                  onNotify={showToast}
+                                />
+                              ) : (
+                                <span className="text-xs text-slate-400">
+                                  {sh.status === 'DISPATCHED' ? 'Not provided' : 'Once dispatched'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4 text-xs font-mono text-slate-500">
+                              {new Date(sh.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="p-4 text-center">
+                              <Badge
+                                variant="secondary"
+                                className={
+                                  sh.status === 'DISPATCHED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : sh.status === 'CANCELLED'
+                                      ? 'bg-slate-100 text-slate-600'
+                                      : sh.status === 'READY_FOR_DISPATCH'
+                                        ? 'bg-indigo-100 text-indigo-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                }
+                              >
+                                {sh.status === 'READY_FOR_DISPATCH' ? 'READY' : sh.status}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {activeTab === 'billing' && (
             <div className="space-y-4">
               {/* Filters (US-096) */}
