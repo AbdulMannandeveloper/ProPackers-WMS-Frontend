@@ -20,6 +20,8 @@ export type ShipmentItem = {
   sourceLocationId: string
   quantity: number
   status: ShipmentItemStatus
+  /** How much of this line has come back after dispatch. */
+  returnedQuantity?: number
   /** Set when this line ships under its own consignment number. */
   trackingId?: string | null
   product?: {
@@ -170,6 +172,24 @@ export const pickShipmentItem = (id: string): Promise<ShipmentItem> =>
 export const unpickShipmentItem = (id: string): Promise<ShipmentItem> =>
   httpClient({ method: 'PUT', url: `/api/shipment-items/${id}/unpick` })
 
+/**
+ * Returns part or all of a dispatched line to the shelf it was picked from.
+ *
+ * Admin only, and only once the shipment is DISPATCHED — before that, unpick
+ * and cancel already release reserved stock. The invoice is deliberately NOT
+ * changed: the dispatch happened and was charged for.
+ */
+export const returnShipmentItem = (
+  id: string,
+  quantity: number,
+  reason?: string
+): Promise<ShipmentItem> =>
+  httpClient({
+    method: 'POST',
+    url: `/api/shipment-items/${id}/return`,
+    data: { quantity, reason },
+  })
+
 /** Quantity / location / tracking id. Admin only. Status is not settable here. */
 export const updateShipmentItem = (
   id: string,
@@ -191,5 +211,6 @@ export default {
   deleteShipment,
   pickShipmentItem,
   unpickShipmentItem,
+  returnShipmentItem,
   updateShipmentItem,
 }

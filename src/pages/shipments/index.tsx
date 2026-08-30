@@ -80,6 +80,11 @@ export default function ShipmentsPage() {
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null)
 
   // Tracking number editor, inside the details drawer.
+  // Returning a dispatched line. Held per item id so two rows cannot share a
+  // draft quantity.
+  const [returnDrafts, setReturnDrafts] = useState<Record<string, string>>({})
+  const [returning, setReturning] = useState<string | null>(null)
+
   const [trackingDraft, setTrackingDraft] = useState('')
   const [savingTracking, setSavingTracking] = useState(false)
 
@@ -295,6 +300,45 @@ export default function ShipmentsPage() {
    * server is the authority on that; this just avoids offering a control that
    * would 400.
    */
+  /**
+   * Sends part of a dispatched line back to the bin it came from.
+   *
+   * The invoice is untouched by design — the server does not change it and
+   * neither does this. Worth saying on the screen too, so nobody expects a
+   * credit to appear.
+   */
+  const handleReturnItem = async (itemId: string, outstanding: number) => {
+    const raw = returnDrafts[itemId] ?? ''
+    const quantity = Number(raw)
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      showToast('Enter a whole number above zero to return.', 'error')
+      return
+    }
+    if (quantity > outstanding) {
+      showToast(`Only ${outstanding} of that line is still out.`, 'error')
+      return
+    }
+
+    setReturning(itemId)
+    try {
+      await shipmentsApi.returnShipmentItem(itemId, quantity)
+      showToast(`${quantity} returned to stock. The invoice is unchanged.`)
+      setReturnDrafts((prev) => ({ ...prev, [itemId]: '' }))
+
+      const refreshed = await shipmentsApi.getShipmentById(selectedShipment!.id)
+      setSelectedShipment(refreshed)
+      await loadData()
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.error || err?.message || 'Could not return the item.',
+        'error'
+      )
+    } finally {
+      setReturning(null)
+    }
+  }
+
   const handleSaveTracking = async (override?: string) => {
     if (!selectedShipment) return
 
@@ -1029,7 +1073,10 @@ export default function ShipmentsPage() {
                       <th className="p-3">Pick Location</th>
                       <th className="p-3 text-center">Qty</th>
                       <th className="p-3 text-center">Status</th>
-                      {isStaff && selectedShipment.status === 'PENDING' && <th className="p-3 text-right">Action</th>}
+                      {((isStaff && selectedShipment.status === 'PENDING') ||
+                        (isAdmin && selectedShipment.status === 'DISPATCHED')) && (
+                        <th className="p-3 text-right">Action</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
@@ -1050,7 +1097,14 @@ export default function ShipmentsPage() {
                               <span className="block text-xs font-mono text-slate-400">{item.sourceLocation.materializedPath}</span>
                             )}
                           </td>
-                          <td className="p-3 text-center font-bold">{item.quantity} units</td>
+                          <td className="p-3 text-center font-bold">
+                            {item.quantity} units
+                            {(item.returnedQuantity ?? 0) > 0 && (
+                              <span className="block text-xs font-normal text-amber-600 dark:text-amber-400">
+                                {item.returnedQuantity} returned
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3 text-center">
                             <Badge
                               variant={item.status === 'PICKED' ? 'default' : 'secondary'}
@@ -1076,6 +1130,50 @@ export default function ShipmentsPage() {
                                   Undo Pick
                                 </Button>
                               )}
+                            </td>
+                          )}
+                          {isAdmin && selectedShipment.status === 'DISPATCHED' && (
+                            <td className="p-3 text-right">
+                              {(() => {
+                                const outstanding =
+                                  item.quantity - (item.returnedQuantity ?? 0)
+                                if (outstanding <= 0) {
+                                  return (
+                                    <span className="text-xs text-slate-400">
+                                      Fully returned
+                                    </span>
+                                  )
+                                }
+                                return (
+                                  <div className="flex items-center justify-end gap-2">
+                                    <div className="w-20">
+                                      <Input
+                                        type="number"
+                                        min={1}
+                                        max={outstanding}
+                                        placeholder={String(outstanding)}
+                                        value={returnDrafts[item.id] ?? ''}
+                                        onChange={(e) =>
+                                          setReturnDrafts((prev) => ({
+                                            ...prev,
+                                            [item.id]: e.target.value,
+                                          }))
+                                        }
+                                        aria-label={`Quantity to return of ${item.product?.skuCode ?? 'item'}`}
+                                      />
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={returning === item.id}
+                                      onClick={() => handleReturnItem(item.id, outstanding)}
+                                      title={`Puts stock back in ${item.sourceLocation?.locationName ?? 'its original location'}. The invoice is not changed.`}
+                                    >
+                                      {returning === item.id ? 'Returning…' : 'Return'}
+                                    </Button>
+                                  </div>
+                                )
+                              })()}
                             </td>
                           )}
                         </tr>
