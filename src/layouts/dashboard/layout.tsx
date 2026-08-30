@@ -29,6 +29,10 @@ const navItems: NavItem[] = [
   { label: 'Profit & Loss', href: '/app/profit-loss', icon: LineChart, adminOnly: true },
 ]
 
+const clientNavItems: NavItem[] = [
+  { label: 'My Portal', href: '/client', icon: Briefcase },
+]
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const role = useAuthStore((s) => s.role)
   const logout = useAuthStore((s) => s.logout)
@@ -38,7 +42,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const displayName = useAuthStore((s) => s.displayName) ?? 'Workspace user'
   const isClient = role === 'client'
   const isAdmin = role === 'admin'
-  const visibleNavItems = navItems.filter((item) => {
+  // Clients get their own portal and nothing else. The filter used to test only
+  // `adminOnly`, so every non-admin item fell through to `return true` and a
+  // client's sidebar showed Dashboard, Attendance, Inventory, Shipments and
+  // Payroll — all of them staff routes that redirect on click. Nothing leaked,
+  // but a paying customer was looking at our payroll menu, and there was no link
+  // to the portal they actually have.
+  const visibleNavItems = (isClient ? clientNavItems : navItems).filter((item) => {
     if (!item.adminOnly) return true
     return isAdmin
   })
