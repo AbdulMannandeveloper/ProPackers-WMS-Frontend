@@ -2,21 +2,23 @@ import type { ReactNode } from 'react'
 
 import { Navigate, useLocation } from 'react-router'
 
-import { defineAbilityFrom } from '@/lib/ability'
 import { useAuthStore } from '@/stores/auth'
+import type { AppRole } from '@/routes/types'
 
 interface ProtectedRouteProps {
   children: ReactNode
-  permissions: string[]
   requireAuth: boolean
+  allowedRoles?: AppRole[]
 }
 
 export function ProtectedRoute({
   children,
-  permissions,
   requireAuth,
+  allowedRoles,
 }: ProtectedRouteProps) {
-  const { permissions: userPermissions, token } = useAuthStore()
+  const token = useAuthStore((s) => s.token)
+  const role = useAuthStore((s) => s.role)
+  const authReady = useAuthStore((s) => s.authReady)
   const isAuthenticated = Boolean(token)
   const location = useLocation()
 
@@ -24,18 +26,29 @@ export function ProtectedRoute({
     return <>{children}</>
   }
 
+  // The access token is held in memory, so after a reload it is briefly absent
+  // while the refresh cookie is exchanged for a new one. Redirecting during that
+  // window would sign out every user who pressed F5.
+  if (!authReady) {
+    return (
+      <div className="grid min-h-screen place-items-center text-sm text-slate-400">
+        Restoring your session…
+      </div>
+    )
+  }
+
   if (!isAuthenticated) {
     return <Navigate to="/auth/login" replace />
   }
 
-  if (permissions.length > 0) {
-    const ability = defineAbilityFrom(userPermissions)
-    const allowed = permissions.some((p) => ability.can(p, 'all'))
-
-    if (!allowed) {
-      return <Navigate to="/error/403" state={{ from: location }} replace />
-    }
+  if (!role) {
+    return <Navigate to="/auth/login" replace />
   }
+
+  if (allowedRoles && !allowedRoles.includes(role as AppRole)) {
+    return <Navigate to="/error/403" state={{ from: location }} replace />
+  }
+
 
   return <>{children}</>
 }

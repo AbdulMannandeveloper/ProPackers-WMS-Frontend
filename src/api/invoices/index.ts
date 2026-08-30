@@ -1,0 +1,146 @@
+import httpClient from '../http-client'
+
+export type InvoiceStatus = 'DRAFT' | 'APPROVED' | 'PAID'
+export type LineItemType = 'AUTOMATED_SERVICE' | 'MANUAL_CHARGE'
+
+export type InvoiceLineItem = {
+  id: string
+  invoiceId: string
+  itemType: LineItemType
+  dateOfService: string
+  description: string
+  quantity: number | string
+  unitPrice: number | string
+  totalPrice: number | string
+  clientServiceId?: string | null
+  clientService?: {
+    id: string
+    service?: {
+      id: string
+      description: string
+      unit: string
+    }
+  } | null
+}
+
+export type MonthlyInvoice = {
+  id: string
+  clientId: string
+  billingPeriod: string
+  /**
+   * The sum of the line items, EXCLUDING tax. Deliberately ex-tax: the profit
+   * and loss report reads this as company earnings, and tax is collected for
+   * HMRC rather than earned. What the client owes is totalAmount + taxAmount.
+   */
+  totalAmount: number | string
+  taxApplied?: boolean
+  taxRate?: number | string | null
+  taxAmount?: number | string
+  status: InvoiceStatus
+  pdfLink?: string | null
+  paidAt?: string | null
+  paymentMethod?: string | null
+  paymentReference?: string | null
+  createdAt: string
+  updatedAt: string
+  approvedAt?: string | null
+  client?: {
+    id: string
+    companyName: string
+    contactName: string
+    email: string
+  }
+  lineItems?: InvoiceLineItem[]
+}
+
+const BASE = '/api/monthly-invoices'
+
+export const getAllInvoices = (): Promise<MonthlyInvoice[]> =>
+  httpClient({ method: 'GET', url: `${BASE}/` })
+
+export const getInvoicesByClientId = (clientId: string): Promise<MonthlyInvoice[]> =>
+  httpClient({ method: 'GET', url: `${BASE}/client/${clientId}` })
+
+export const getInvoiceById = (id: string): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'GET', url: `${BASE}/${id}` })
+
+export const createInvoice = (payload: { clientId: string }): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
+
+/** APPROVED -> PAID. Method and reference are optional but worth capturing. */
+export const markInvoicePaid = (
+  id: string,
+  payload: { paymentMethod?: string; paymentReference?: string } = {}
+): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/pay`, data: payload })
+
+/**
+ * The stored invoice PDF, rendered once at approval so it is a fixed record of
+ * what the client was billed rather than a fresh render of current figures.
+ */
+export const downloadInvoicePdf = async (id: string): Promise<Blob> =>
+  httpClient({ method: 'GET', url: `${BASE}/${id}/pdf`, responseType: 'blob' })
+
+export const approveInvoice = (id: string): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/approve` })
+
+export const deleteInvoice = (id: string): Promise<{ message: string }> =>
+  httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
+
+export const getLineItems = (invoiceId: string): Promise<InvoiceLineItem[]> =>
+  httpClient({ method: 'GET', url: `${BASE}/${invoiceId}/line-items` })
+
+export const createLineItem = (
+  invoiceId: string,
+  payload: {
+    description: string
+    quantity: number
+    unitPrice: number
+    dateOfService?: string
+  }
+): Promise<InvoiceLineItem> =>
+  httpClient({ method: 'POST', url: `${BASE}/${invoiceId}/line-items`, data: payload })
+
+/** The platform tax rate, as a percentage. Staff may read it. */
+export const getTaxRate = (): Promise<{ rate: number }> =>
+  httpClient({ method: 'GET', url: `${BASE}/tax-rate` })
+
+/** Admin only. 0-100. */
+export const setTaxRate = (rate: number): Promise<{ rate: number }> =>
+  httpClient({ method: 'PUT', url: `${BASE}/tax-rate`, data: { rate } })
+
+/**
+ * Applies or removes tax on a DRAFT invoice. The rate in force at the moment it
+ * is applied is frozen onto the invoice, so a later change to the platform rate
+ * does not restate it.
+ */
+export const setInvoiceTax = (id: string, applied: boolean): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'POST', url: `${BASE}/${id}/tax`, data: { applied } })
+
+/** What the client actually owes: the ex-tax total plus any tax. */
+export const grandTotal = (invoice: {
+  totalAmount: number | string
+  taxAmount?: number | string
+}): number =>
+  Number(invoice.totalAmount ?? 0) + Number(invoice.taxAmount ?? 0)
+
+export const deleteLineItem = (invoiceId: string, lineItemId: string): Promise<{ message: string }> =>
+  httpClient({ method: 'DELETE', url: `${BASE}/${invoiceId}/line-items/${lineItemId}` })
+
+export default {
+  getAllInvoices,
+  getInvoicesByClientId,
+  getInvoiceById,
+  createInvoice,
+  approveInvoice,
+  markInvoicePaid,
+  downloadInvoicePdf,
+  deleteInvoice,
+  getLineItems,
+  createLineItem,
+  deleteLineItem,
+  getTaxRate,
+  setTaxRate,
+  setInvoiceTax,
+  grandTotal,
+}
