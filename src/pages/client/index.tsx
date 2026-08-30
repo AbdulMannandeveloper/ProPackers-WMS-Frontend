@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth'
 import {
   clients as apiClients,
-  services as apiServices,
   products as productsApi,
   stock as stockApi,
   inventory as inventoryApi,
@@ -13,6 +12,7 @@ import type { MonthlyInvoice, InvoiceLineItem } from '@/api/invoices'
 import type { Product } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
 import type { InventoryLedgerEntry } from '@/api/inventory'
+import type { Client } from '@/api/types'
 import {
   Button,
   Card,
@@ -26,23 +26,13 @@ import {
   Modal,
 } from '@/components/Shared Components'
 
-type ClientRecord = {
-  id: string
-  companyName?: string
-  contactName?: string
-  email?: string
-  mobile?: string
-  address?: string
-  userId?: string
-}
-
 export default function ClientPortalPage() {
   const userId = useAuthStore((s) => s.userId)
   const displayName = useAuthStore((s) => s.displayName) ?? 'Client'
 
   const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'billing' | 'services' | 'profile'>('overview')
   const [loading, setLoading] = useState(false)
-  const [myClient, setMyClient] = useState<ClientRecord | null>(null)
+  const [myClient, setMyClient] = useState<Client | null>(null)
 
   // Services tab
   const [serviceItems, setServiceItems] = useState<{ description: string; chargedPrice: number; unit?: string }[]>([])
@@ -81,9 +71,9 @@ export default function ClientPortalPage() {
       if (!userId) return
       setLoading(true)
       try {
-        // Find client record for this user
-        const all = await apiClients.getAllClients()
-        const client = Array.isArray(all) ? (all as ClientRecord[]).find((c) => c.userId === userId) : null
+        // The server resolves the client record from the session, so a client can
+        // only ever load its own account.
+        const client = await apiClients.getMyClient().catch(() => null)
         setMyClient(client || null)
 
         if (!client) {
@@ -91,9 +81,9 @@ export default function ClientPortalPage() {
           return
         }
 
-        // Load everything in parallel
-        const [svcList, clientSvcList, prodsData, stockData, invoiceData, ledgerData] = await Promise.all([
-          apiServices.getAllServices().catch(() => []),
+        // Load everything in parallel. Products and stock come back already
+        // narrowed to this client by the API.
+        const [clientSvcList, prodsData, stockData, invoiceData, ledgerData] = await Promise.all([
           clientServicesApi.getClientServicesByClientId(client.id).catch(() => []),
           productsApi.getAllProducts().catch(() => []),
           stockApi.getAllStockLevels().catch(() => []),
@@ -101,20 +91,18 @@ export default function ClientPortalPage() {
           inventoryApi.getInventoryLedgerByClientId(client.id).catch(() => []),
         ])
 
-        // Services
-        const svcs = Array.isArray(svcList) ? svcList : []
+        // Services (description/unit arrive on the included service relation)
         const cs = Array.isArray(clientSvcList) ? clientSvcList : []
         setServiceItems(
           cs.map((entry: any) => ({
-            description: svcs.find((s: any) => s.id === entry.serviceId)?.description ?? entry.serviceId,
+            description: entry.service?.description ?? entry.serviceId,
             chargedPrice: Number(entry.chargedPrice ?? 0),
-            unit: entry.unit || svcs.find((s: any) => s.id === entry.serviceId)?.unit || '',
+            unit: entry.unit || entry.service?.unit || '',
           }))
         )
 
-        // Products (filtered to this client)
-        const allProds = Array.isArray(prodsData) ? prodsData : []
-        const myProducts = allProds.filter((p) => p.clientId === client.id)
+        // Products
+        const myProducts = Array.isArray(prodsData) ? prodsData : []
         setProducts(myProducts)
 
         // Stock levels for my products

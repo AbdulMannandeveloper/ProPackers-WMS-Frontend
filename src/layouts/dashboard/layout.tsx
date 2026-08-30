@@ -147,7 +147,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
         {/* Top Header */}
-        <header className="h-16 shrink-0 flex items-center justify-between px-6 bg-background/80 backdrop-blur-md border-b border-border sticky top-0 z-40">
+        <header className="h-16 shrink-0 flex items-center justify-between px-6 bg-transparent border-b border-transparent sticky top-0 z-40">
           <div className="flex-1"></div>
           
           {/* User Profile Dropdown */}

@@ -28,6 +28,13 @@ export const getProductById = (id: string): Promise<Product> =>
 export const getProductByField = (field: string, value: string): Promise<Product[]> =>
   httpClient({ method: 'GET', url: `${BASE}/field/${field}/${value}` })
 
+/** Opening stock placed at creation time, recorded as a CHECKIN movement. */
+export type InitialStock = {
+  locationId: string
+  quantity: number
+  notes?: string
+}
+
 export const createProduct = (payload: {
   clientId: string
   skuCode: string
@@ -37,6 +44,7 @@ export const createProduct = (payload: {
   size?: string | null
   weight?: number | null
   thresholdLimit?: number
+  initialStock?: InitialStock
 }): Promise<Product> =>
   httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
 
@@ -57,7 +65,36 @@ export const deactivateProduct = (id: string): Promise<{ message: string }> =>
 export const deleteProduct = (id: string): Promise<any> =>
   httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
 
-export const getProductAndStockLevelById = (id: string): Promise<any> =>
+/** Everything the product detail view needs, in one request. */
+export type ProductDetail = {
+  product: Product
+  stockLevels: Array<{
+    id: string
+    productId: string
+    locationId: string
+    currentQuantity: number
+    reservedQuantity: number
+    location?: {
+      locationName: string
+      zone?: string | null
+      shelf?: string | null
+      bin?: string | null
+    }
+  }>
+  totalQuantity: number
+  recentMovements: Array<{
+    id: string
+    movementType: 'CHECKIN' | 'CHECKOUT' | 'INTERNAL_MOVE'
+    quantity: number
+    timestamp: string
+    notes?: string | null
+    fromLocation?: { locationName: string } | null
+    toLocation?: { locationName: string } | null
+    user?: { firstName?: string; lastName?: string } | null
+  }>
+}
+
+export const getProductAndStockLevelById = (id: string): Promise<ProductDetail> =>
   httpClient({ method: 'GET', url: `${BASE}/${id}/stock` })
 
 /** A scan resolves to one or more products — see lookupByBarcodeOrSku. */

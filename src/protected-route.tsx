@@ -38,13 +38,5 @@ export function ProtectedRoute({
   }
 
 
-  // Role-based guard: employees only allowed to access the dashboard root
-  if (role === 'employee') {
-    const clean = location.pathname.replace(/\/+$/g, '')
-    if (clean !== '/app') {
-      return <Navigate to="/error/403" state={{ from: location }} replace />
-    }
-  }
-
   return <>{children}</>
 }
