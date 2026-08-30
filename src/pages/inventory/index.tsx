@@ -8,7 +8,7 @@ import {
   warehouseLocations as locationsApi,
   auditLogs as auditLogsApi,
 } from '@/api'
-import type { Product } from '@/api/products'
+import type { Product, ProductDetail } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
 import type { InventoryLedgerEntry } from '@/api/inventory'
 import {
@@ -28,9 +28,12 @@ export default function InventoryPage() {
   const role = useAuthStore((s) => s.role)
   const currentUserId = useAuthStore((s) => s.userId)
   const isAdmin = role === 'admin'
+  // Admins and employees are both full inventory operators; only admin-exclusive
+  // surfaces (audit logs) stay behind isAdmin.
+  const isStaff = role === 'admin' || role === 'employee'
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'products' | 'stock' | 'ledgers' | 'daily-checkout'>('products')
+  const [activeTab, setActiveTab] = useState<'products' | 'stock' | 'ledgers' | 'daily-checkout' | 'audit-logs'>('products')
 
   // Global Data States
   const [products, setProducts] = useState<Product[]>([])
@@ -69,6 +72,11 @@ export default function InventoryPage() {
   const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null)
   const barcodeRef = useRef<SVGSVGElement | null>(null)
 
+  // Product detail modal (US: click a product to see everything about it)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detail, setDetail] = useState<ProductDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
   // Product Form State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [clientId, setClientId] = useState('')
@@ -81,6 +89,12 @@ export default function InventoryPage() {
   const [thresholdLimit, setThresholdLimit] = useState(0)
   const [productSaving, setProductSaving] = useState(false)
 
+  // Opening stock, folded into the Add Product form so registering a SKU and
+  // putting it on a shelf is one step instead of two dialogs.
+  const [withOpeningStock, setWithOpeningStock] = useState(false)
+  const [openingLocationId, setOpeningLocationId] = useState('')
+  const [openingQuantity, setOpeningQuantity] = useState(1)
+
   // Stock Adjustment Form State
   const [adjustProductId, setAdjustProductId] = useState('')
   const [adjustMovementType, setAdjustMovementType] = useState<'CHECKIN' | 'INTERNAL_MOVE' | 'CHECKOUT'>('CHECKIN')
@@ -91,6 +105,9 @@ export default function InventoryPage() {
   const [adjustNotes, setAdjustNotes] = useState('')
   const [adjustSaving, setAdjustSaving] = useState(false)
   const [deactivateSaving, setDeactivateSaving] = useState(false)
+
+  // Product picker search inside the Adjust Stock modal
+  const [adjustProductSearch, setAdjustProductSearch] = useState('')
 
   // Search/Filters (Products tab)
   const [skuSearch, setSkuSearch] = useState('')
@@ -118,10 +135,14 @@ export default function InventoryPage() {
     setLoading(true)
     try {
       const [prodsData, stockData, ledgersData, clientsData, locsData] = await Promise.all([
-        productsApi.getAllProducts(),
-        stockApi.getAllStockLevels(),
+        productsApi.getAllProducts().catch(() => [] as Product[]),
+        stockApi.getAllStockLevels().catch(() => [] as StockLevel[]),
         inventoryApi.getAllInventoryLedgers().catch(() => [] as any[]),
-        isAdmin ? clientsApi.getAllClients().catch(() => []) : Promise.resolve([]),
+        // Employees get the slim lookup: enough to attribute a product to a client,
+        // without exposing client contact details.
+        isAdmin
+          ? clientsApi.getAllClients().catch(() => [])
+          : clientsApi.getClientLookup().catch(() => []),
         locationsApi.getAllWarehouseLocations().catch(() => []),
       ])
 
@@ -139,7 +160,7 @@ export default function InventoryPage() {
 
   useEffect(() => {
     void loadData()
-  }, [isAdmin])
+  }, [role])
 
   // Save/Edit Product
   const handleOpenAddProduct = () => {
@@ -152,6 +173,9 @@ export default function InventoryPage() {
     setSize('')
     setWeight('')
     setThresholdLimit(5)
+    setWithOpeningStock(false)
+    setOpeningLocationId(locations[0]?.id || '')
+    setOpeningQuantity(1)
     setProductModalOpen(true)
   }
 
@@ -165,7 +189,23 @@ export default function InventoryPage() {
     setSize(prod.size || '')
     setWeight(prod.weight ? String(prod.weight) : '')
     setThresholdLimit(prod.thresholdLimit)
+    setWithOpeningStock(false)
     setProductModalOpen(true)
+  }
+
+  // Product detail — one request returns product, stock by location and recent movements
+  const handleOpenDetail = async (prod: Product) => {
+    setSelectedProduct(prod)
+    setDetail(null)
+    setDetailOpen(true)
+    setDetailLoading(true)
+    try {
+      setDetail(await productsApi.getProductAndStockLevelById(prod.id))
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || err?.message || 'Failed to load product details.', 'error')
+    } finally {
+      setDetailLoading(false)
+    }
   }
 
   const handleSaveProduct = async (e: React.FormEvent) => {
@@ -175,6 +215,18 @@ export default function InventoryPage() {
     if (!clientId || !skuCode || !productName) {
       showToast('Client, SKU Code, and Product Name are required.', 'error')
       return
+    }
+
+    const addingOpeningStock = !selectedProduct && withOpeningStock
+    if (addingOpeningStock) {
+      if (!openingLocationId) {
+        showToast('Select a location for the opening stock.', 'error')
+        return
+      }
+      if (openingQuantity <= 0) {
+        showToast('Opening stock quantity must be greater than zero.', 'error')
+        return
+      }
     }
 
     setProductSaving(true)
@@ -194,8 +246,22 @@ export default function InventoryPage() {
         await productsApi.updateProduct(selectedProduct.id, payload)
         showToast('Product updated successfully.')
       } else {
-        await productsApi.createProduct(payload)
-        showToast('Product catalog SKU registered successfully.')
+        await productsApi.createProduct({
+          ...payload,
+          ...(addingOpeningStock
+            ? {
+                initialStock: {
+                  locationId: openingLocationId,
+                  quantity: Number(openingQuantity),
+                },
+              }
+            : {}),
+        })
+        showToast(
+          addingOpeningStock
+            ? `SKU registered with ${openingQuantity} units of opening stock.`
+            : 'Product catalog SKU registered successfully.'
+        )
       }
 
       setProductModalOpen(false)
@@ -245,13 +311,16 @@ export default function InventoryPage() {
     }
   }
 
-  // Stock Adjustment
-  const handleOpenAdjustStock = () => {
+  // Stock Adjustment.
+  // Pass a product to skip the picker entirely — this is the common case, opened
+  // from a product row or the detail modal.
+  const handleOpenAdjustStock = (preselect?: Product) => {
     if (products.length === 0) {
       showToast('Please register at least one product first.', 'error')
       return
     }
-    setAdjustProductId(products[0]?.id || '')
+    setAdjustProductId(preselect?.id || products[0]?.id || '')
+    setAdjustProductSearch('')
     setAdjustMovementType('CHECKIN')
     setAdjustFromLocationId(locations[0]?.id || '')
     setAdjustToLocationId(locations[0]?.id || '')
@@ -548,6 +617,17 @@ export default function InventoryPage() {
     return list
   }, [products, skuSearch, productNameSearch, hideDeactivated])
 
+  // Product picker inside the Adjust Stock modal. A plain <select> of every SKU is
+  // unusable once the catalog grows, so the list is searchable by SKU or name.
+  const adjustProductOptions = useMemo(() => {
+    const active = products.filter((p) => !p.isDeactivated)
+    const q = adjustProductSearch.trim().toLowerCase()
+    if (!q) return active
+    return active.filter(
+      (p) => p.skuCode.toLowerCase().includes(q) || p.productName.toLowerCase().includes(q)
+    )
+  }, [products, adjustProductSearch])
+
   // US-041: Stock table filters
   const filteredStockLevels = useMemo(() => {
     return stockLevels.filter((sl) => {
@@ -563,6 +643,12 @@ export default function InventoryPage() {
   const formatWeight = (w?: any) => {
     if (w === undefined || w === null) return '—'
     return `${Number(w).toFixed(2)} kg`
+  }
+
+  const MOVEMENT_LABELS: Record<string, string> = {
+    CHECKIN: 'Stock In',
+    CHECKOUT: 'Stock Out',
+    INTERNAL_MOVE: 'Move',
   }
 
   return (
@@ -598,9 +684,9 @@ export default function InventoryPage() {
             Track product specifications, adjust physical stock levels, and review the double-entry movement ledger.
           </p>
         </div>
-        {isAdmin && (
+        {isStaff && (
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleOpenAdjustStock}>
+            <Button variant="secondary" onClick={() => handleOpenAdjustStock()}>
               Adjust Stock Level
             </Button>
             <Button onClick={handleOpenAddProduct}>
@@ -697,7 +783,7 @@ export default function InventoryPage() {
                           <th className="pb-3 font-semibold">Threshold Limit</th>
                           <th className="pb-3 font-semibold">Client Company</th>
                           <th className="pb-3 font-semibold">Status</th>
-                          {isAdmin && <th className="pb-3 font-semibold text-right">Actions</th>}
+                          {isStaff && <th className="pb-3 font-semibold text-right">Actions</th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
@@ -715,7 +801,13 @@ export default function InventoryPage() {
                                 .reduce((sum, s) => sum + s.currentQuantity, 0) < p.thresholdLimit
 
                             return (
-                              <tr key={p.id} className={p.isDeactivated ? 'opacity-50' : ''}>
+                              <tr
+                                key={p.id}
+                                onClick={() => handleOpenDetail(p)}
+                                className={`cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/50 ${
+                                  p.isDeactivated ? 'opacity-50' : ''
+                                }`}
+                              >
                                 <td className="py-4 font-mono font-bold text-slate-800 dark:text-slate-200">
                                   {p.skuCode}
                                 </td>
@@ -746,7 +838,10 @@ export default function InventoryPage() {
                                   <button
                                     type="button"
                                     className="font-medium text-slate-700 dark:text-slate-300 hover:text-cyan-600 hover:underline transition-colors cursor-pointer"
-                                    onClick={() => p.clientId && handleOpenClientContact(p.clientId)}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      if (p.clientId) handleOpenClientContact(p.clientId)
+                                    }}
                                   >
                                     {p.client?.companyName || '—'}
                                   </button>
@@ -756,43 +851,22 @@ export default function InventoryPage() {
                                     {p.isDeactivated ? 'Deactivated' : 'Active'}
                                   </Badge>
                                 </td>
-                                {isAdmin && (
+                                {isStaff && (
                                   <td className="py-4 text-right">
+                                    {/* Stock adjustment is the highest-frequency action, so it stays
+                                        one click from the row. Edit / barcode / deactivate / delete
+                                        live in the detail modal, opened by clicking the row. */}
                                     <div className="flex justify-end gap-1.5">
-                                      {/* US-038: Barcode button */}
                                       <Button
-                                        variant="ghost"
+                                        variant="secondary"
                                         size="sm"
-                                        onClick={() => handleOpenBarcode(p)}
-                                      >
-                                        Barcode
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleOpenEditProduct(p)}
-                                      >
-                                        Edit
-                                      </Button>
-                                      <Button
-                                        variant={p.isDeactivated ? 'secondary' : 'destructive'}
-                                        size="sm"
-                                        onClick={() => {
-                                          setSelectedProduct(p)
-                                          setDeactivateConfirmOpen(true)
+                                        disabled={p.isDeactivated}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleOpenAdjustStock(p)
                                         }}
                                       >
-                                        {p.isDeactivated ? 'Reactivate' : 'Deactivate'}
-                                      </Button>
-                                      <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        onClick={() => {
-                                          setSelectedProduct(p)
-                                          setDeleteConfirmOpen(true)
-                                        }}
-                                      >
-                                        Delete
+                                        Adjust Stock
                                       </Button>
                                     </div>
                                   </td>
@@ -1280,7 +1354,286 @@ export default function InventoryPage() {
               required
             />
           </div>
+
+          {/* Opening stock — saves a second trip through the Adjust Stock dialog.
+              Only offered when registering a new SKU, not when editing one. */}
+          {!selectedProduct && (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+              <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={withOpeningStock}
+                  onChange={(e) => setWithOpeningStock(e.target.checked)}
+                  className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                />
+                Add opening stock now
+              </label>
+              <p className="text-xs text-slate-500">
+                Records an inbound check-in so the SKU arrives on the shelf ready to use.
+              </p>
+
+              {withOpeningStock && (
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                      Location *
+                    </label>
+                    <Select
+                      value={openingLocationId}
+                      onChange={(e) => setOpeningLocationId(e.target.value)}
+                      required
+                    >
+                      {locations.length === 0 && <option value="">No locations available</option>}
+                      {locations.map((loc) => (
+                        <option key={loc.id} value={loc.id}>
+                          {loc.locationName} (Zone {loc.zone || '—'})
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                      Quantity *
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={openingQuantity}
+                      onChange={(e) => setOpeningQuantity(parseInt(e.target.value) || 1)}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </form>
+      </Modal>
+
+      {/* ───────────────────────────────── MODAL: PRODUCT DETAIL ───────────────────────────────── */}
+      <Modal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        title={selectedProduct ? `${selectedProduct.skuCode} — ${selectedProduct.productName}` : 'Product details'}
+        description={selectedProduct?.client?.companyName || undefined}
+        size="xl"
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDetailOpen(false)}>
+              Close
+            </Button>
+            {isStaff && selectedProduct && (
+              <>
+                <Button variant="ghost" onClick={() => handleOpenBarcode(selectedProduct)}>
+                  Barcode
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setDetailOpen(false)
+                    handleOpenEditProduct(selectedProduct)
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant={selectedProduct.isDeactivated ? 'secondary' : 'destructive'}
+                  onClick={() => {
+                    setDetailOpen(false)
+                    setDeactivateConfirmOpen(true)
+                  }}
+                >
+                  {selectedProduct.isDeactivated ? 'Reactivate' : 'Deactivate'}
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setDetailOpen(false)
+                    setDeleteConfirmOpen(true)
+                  }}
+                >
+                  Delete
+                </Button>
+                <Button
+                  disabled={selectedProduct.isDeactivated}
+                  onClick={() => {
+                    setDetailOpen(false)
+                    handleOpenAdjustStock(selectedProduct)
+                  }}
+                >
+                  Adjust Stock
+                </Button>
+              </>
+            )}
+          </div>
+        }
+      >
+        {detailLoading ? (
+          <div className="py-12 text-center text-slate-500">Loading product details...</div>
+        ) : !detail ? (
+          <div className="py-12 text-center text-slate-400">No details available.</div>
+        ) : (
+          <div className="space-y-6">
+            {/* Stock summary against the threshold */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              {(() => {
+                const isLow = detail.totalQuantity < detail.product.thresholdLimit
+                return [
+                  {
+                    label: 'Total units on hand',
+                    value: detail.totalQuantity,
+                    color: isLow
+                      ? 'text-rose-700 bg-rose-50 border-rose-100 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-300'
+                      : 'text-teal-700 bg-teal-50 border-teal-100 dark:bg-teal-950/30 dark:border-teal-900 dark:text-teal-300',
+                  },
+                  {
+                    label: 'Low stock threshold',
+                    value: detail.product.thresholdLimit,
+                    color:
+                      'text-slate-600 bg-slate-50 border-slate-200 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300',
+                  },
+                  {
+                    label: 'Locations holding stock',
+                    value: detail.stockLevels.length,
+                    color:
+                      'text-indigo-700 bg-indigo-50 border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-300',
+                  },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className={`flex-1 border rounded-2xl p-4 ${color}`}>
+                    <p className="text-xs uppercase tracking-wider font-semibold opacity-80">{label}</p>
+                    <p className="text-2xl font-extrabold mt-1">{value}</p>
+                  </div>
+                ))
+              })()}
+            </div>
+
+            {detail.totalQuantity < detail.product.thresholdLimit && !detail.product.isDeactivated && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 dark:bg-rose-950/30 dark:border-rose-900 p-3 text-sm text-rose-700 dark:text-rose-300">
+                Stock is below the threshold limit of {detail.product.thresholdLimit} units.
+              </div>
+            )}
+
+            {/* Attributes */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">Specification</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 text-sm">
+                {[
+                  { label: 'SKU Code', value: detail.product.skuCode },
+                  { label: 'Barcode', value: detail.product.barcode || '—' },
+                  { label: 'Client', value: detail.product.client?.companyName || '—' },
+                  { label: 'Colour', value: detail.product.colour || '—' },
+                  { label: 'Size', value: detail.product.size || '—' },
+                  { label: 'Weight', value: formatWeight(detail.product.weight) },
+                ].map(({ label, value }) => (
+                  <div key={label}>
+                    <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">
+                      {label}
+                    </span>
+                    <span className="text-slate-800 dark:text-slate-200 font-medium">{value}</span>
+                  </div>
+                ))}
+                <div>
+                  <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">
+                    Status
+                  </span>
+                  <Badge variant={detail.product.isDeactivated ? 'secondary' : 'default'}>
+                    {detail.product.isDeactivated ? 'Deactivated' : 'Active'}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Stock by location */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">Stock by location</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
+                      <th className="pb-2 font-semibold">Location</th>
+                      <th className="pb-2 font-semibold">Zone / Shelf / Bin</th>
+                      <th className="pb-2 font-semibold text-right">On hand</th>
+                      <th className="pb-2 font-semibold text-right">Reserved</th>
+                      <th className="pb-2 font-semibold text-right">Available</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
+                    {detail.stockLevels.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-slate-400">
+                          No stock allocated yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      detail.stockLevels.map((sl) => (
+                        <tr key={sl.id}>
+                          <td className="py-3 font-medium">{sl.location?.locationName || '—'}</td>
+                          <td className="py-3 text-slate-500">
+                            {[sl.location?.zone, sl.location?.shelf, sl.location?.bin]
+                              .filter(Boolean)
+                              .join(' / ') || '—'}
+                          </td>
+                          <td className="py-3 text-right font-bold">{sl.currentQuantity}</td>
+                          <td className="py-3 text-right text-slate-500">{sl.reservedQuantity}</td>
+                          <td className="py-3 text-right">{sl.currentQuantity - sl.reservedQuantity}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Recent movements */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">Recent movements</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
+                      <th className="pb-2 font-semibold">When</th>
+                      <th className="pb-2 font-semibold">Type</th>
+                      <th className="pb-2 font-semibold text-right">Qty</th>
+                      <th className="pb-2 font-semibold">From → To</th>
+                      <th className="pb-2 font-semibold">By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
+                    {detail.recentMovements.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-slate-400">
+                          No movements recorded yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      detail.recentMovements.map((m) => (
+                        <tr key={m.id}>
+                          <td className="py-3 text-slate-500">
+                            {new Date(m.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-3">
+                            <Badge variant={m.movementType === 'CHECKOUT' ? 'secondary' : 'default'}>
+                              {MOVEMENT_LABELS[m.movementType] || m.movementType}
+                            </Badge>
+                          </td>
+                          <td className="py-3 text-right font-bold">{m.quantity}</td>
+                          <td className="py-3 text-slate-600 dark:text-slate-400">
+                            {(m.fromLocation?.locationName || 'Supplier') +
+                              ' → ' +
+                              (m.toLocation?.locationName || 'Dispatch')}
+                          </td>
+                          <td className="py-3 text-slate-500">
+                            {`${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ──────────────────────────────── MODAL: CONFIRM DEACTIVATION ──────────────────────────────── */}
@@ -1335,14 +1688,34 @@ export default function InventoryPage() {
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
               Select Product SKU *
             </label>
+            <Input
+              placeholder="Filter by SKU code or product name..."
+              value={adjustProductSearch}
+              onChange={(e) => {
+                const q = e.target.value
+                setAdjustProductSearch(q)
+                // Keep the selection valid as the list narrows.
+                const next = products.filter((p) => {
+                  if (p.isDeactivated) return false
+                  const t = q.trim().toLowerCase()
+                  if (!t) return true
+                  return p.skuCode.toLowerCase().includes(t) || p.productName.toLowerCase().includes(t)
+                })
+                if (next.length > 0 && !next.some((p) => p.id === adjustProductId)) {
+                  setAdjustProductId(next[0].id)
+                }
+              }}
+              className="mb-2"
+            />
             <Select value={adjustProductId} onChange={(e) => setAdjustProductId(e.target.value)} required>
-              {products
-                .filter((p) => !p.isDeactivated)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    [{p.skuCode}] {p.productName}
-                  </option>
-                ))}
+              {adjustProductOptions.length === 0 && (
+                <option value="">No products match “{adjustProductSearch}”</option>
+              )}
+              {adjustProductOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  [{p.skuCode}] {p.productName}
+                </option>
+              ))}
             </Select>
           </div>
 
@@ -1356,9 +1729,9 @@ export default function InventoryPage() {
                 onChange={(e) => setAdjustMovementType(e.target.value as any)}
                 required
               >
-                <option value="CHECKIN">CHECKIN (Inbound Supplier)</option>
-                <option value="INTERNAL_MOVE">INTERNAL_MOVE (Move Slots)</option>
-                <option value="CHECKOUT">CHECKOUT (Outbound Dispatch)</option>
+                <option value="CHECKIN">Stock In — receiving from supplier</option>
+                <option value="INTERNAL_MOVE">Move — between warehouse locations</option>
+                <option value="CHECKOUT">Stock Out — dispatch to customer</option>
               </Select>
             </div>
             <div>
@@ -1604,6 +1977,7 @@ export default function InventoryPage() {
           </p>
         </div>
       </Modal>
+
     </div>
   )
 }
