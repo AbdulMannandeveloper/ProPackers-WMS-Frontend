@@ -11,7 +11,13 @@ import {
 import type { Shipment } from '@/api/shipments'
 import type { Product } from '@/api/products'
 import type { StockLevel } from '@/api/stock'
-import type { Employee, Client } from '@/api/types'
+import type { Client } from '@/api/types'
+
+type EmployeeOption = {
+  id: string
+  firstName: string | null
+  lastName: string | null
+}
 import type { ClientServiceRate } from '@/api/clientServices'
 import {
   Button,
@@ -35,7 +41,10 @@ export default function ShipmentsPage() {
   const [shipments, setShipments] = useState<Shipment[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [stockLevels, setStockLevels] = useState<StockLevel[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
+  // The lookup shape, not the full Employee: /api/employees/lookup returns id
+  // and name only, deliberately, so a dropdown does not carry NI numbers and
+  // salaries into the browser.
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -86,7 +95,10 @@ export default function ShipmentsPage() {
         shipmentsApi.getAllShipments(),
         productsApi.getAllProducts(),
         stockApi.getAllStockLevels(),
-        employeesApi.getAllEmployees().catch(() => []),
+        // Lookup, not getAllEmployees: that one is admin-only, so an employee
+        // raising a shipment got a 403 the .catch() swallowed, leaving the
+        // operator list empty and the create dialog refusing to open.
+        employeesApi.getEmployeeLookup().catch(() => []),
         clientsApi.getAllClients().catch(() => []),
       ])
 
@@ -638,7 +650,7 @@ export default function ShipmentsPage() {
               <Select value={formEmployeeId} onChange={(e) => setFormEmployeeId(e.target.value)} required>
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {getEmployeeName(emp)}
+                    {[emp.firstName, emp.lastName].filter(Boolean).join(' ') || 'Unnamed'}
                   </option>
                 ))}
               </Select>
