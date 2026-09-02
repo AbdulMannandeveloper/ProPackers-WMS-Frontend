@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 
 import DashboardLayout from './layout'
@@ -168,5 +169,74 @@ describe('an admin', () => {
     expect(nav).toMatch(/invoices/i)
     expect(nav).toMatch(/profit/i)
     expect(nav).toMatch(/shipments/i)
+  })
+})
+
+describe('navigation on a phone', () => {
+  // The sidebar is `hidden md:flex`, so below that breakpoint this drawer is the
+  // only way to move around the app at all. There was previously nothing: a
+  // phone user could reach whichever page they landed on and go nowhere else.
+  beforeEach(() => asRole('employee'))
+
+  it('offers a way to open the navigation', () => {
+    renderNav()
+    expect(screen.getByRole('button', { name: /open navigation/i })).toBeInTheDocument()
+  })
+
+  it('starts closed', () => {
+    renderNav()
+    expect(screen.queryByRole('dialog', { name: /navigation/i })).not.toBeInTheDocument()
+  })
+
+  it('opens on tapping the button', async () => {
+    renderNav()
+    await userEvent.click(screen.getByRole('button', { name: /open navigation/i }))
+
+    expect(screen.getByRole('dialog', { name: /navigation/i })).toBeInTheDocument()
+  })
+
+  it('carries the same role-filtered links as the sidebar', async () => {
+    // Not a second list to keep in step: it renders visibleNavItems, so the
+    // role filtering built earlier applies to both.
+    renderNav()
+    await userEvent.click(screen.getByRole('button', { name: /open navigation/i }))
+
+    const drawer = screen.getByRole('dialog', { name: /navigation/i })
+    const hrefs = [...drawer.querySelectorAll('a')].map((a) => a.getAttribute('href'))
+
+    expect(hrefs).toContain('/app/shipments')
+    expect(hrefs).toContain('/app/inventory')
+    // An employee still may not see the admin areas.
+    expect(hrefs).not.toContain('/app/users')
+    expect(hrefs).not.toContain('/app/invoices')
+  })
+
+  it('shows a client only their own portal', async () => {
+    asRole('client')
+    renderNav()
+    await userEvent.click(screen.getByRole('button', { name: /open navigation/i }))
+
+    const drawer = screen.getByRole('dialog', { name: /navigation/i })
+    for (const a of drawer.querySelectorAll('a')) {
+      expect(a.getAttribute('href')?.startsWith('/client')).toBe(true)
+    }
+  })
+
+  it('can be closed again', async () => {
+    renderNav()
+    await userEvent.click(screen.getByRole('button', { name: /open navigation/i }))
+    await userEvent.click(screen.getAllByRole('button', { name: /close navigation/i })[0])
+
+    expect(screen.queryByRole('dialog', { name: /navigation/i })).not.toBeInTheDocument()
+  })
+
+  it('marks the current page inside the drawer too', async () => {
+    renderNav('/app/shipments')
+    await userEvent.click(screen.getByRole('button', { name: /open navigation/i }))
+
+    const drawer = screen.getByRole('dialog', { name: /navigation/i })
+    const current = [...drawer.querySelectorAll('[aria-current="page"]')]
+    expect(current).toHaveLength(1)
+    expect(current[0].getAttribute('href')).toBe('/app/shipments')
   })
 })
