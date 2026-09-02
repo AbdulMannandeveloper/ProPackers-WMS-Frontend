@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
   { label: 'Attendance', href: '/app/attendance', icon: Clock },
   { label: 'Inventory', href: '/app/inventory', icon: Package },
   { label: 'Shipments', href: '/app/shipments', icon: Truck },
-  { label: 'FDA Shipments', href: '/app/fda', icon: ClipboardList },
+  { label: 'FBA Shipments', href: '/app/fba', icon: ClipboardList },
   { label: 'Invoices & Billing', href: '/app/invoices', icon: FileText, adminOnly: true },
   { label: 'Payroll', href: '/app/payroll', icon: Banknote },
   { label: 'Expenses', href: '/app/expenses', icon: CreditCard, adminOnly: true },
