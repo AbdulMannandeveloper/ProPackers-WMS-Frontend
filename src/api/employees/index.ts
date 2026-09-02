@@ -20,4 +20,21 @@ export const getEmployeeLookup = (): Promise<
 
 export const getEmployeeById = (id: string): Promise<Employee> => httpClient({ method: 'GET', url: `${BASE}/${id}` })
 
-export default { addEmployee, getAllEmployees, getEmployeeLookup, getEmployeeById }
+/**
+ * Employment details. Admin only.
+ *
+ * baseSalary is not accepted — Payroll owns it, and it is the figure payroll
+ * multiplies into net pay. The server allowlists these five and ignores the rest.
+ */
+export const updateEmployee = (
+  id: string,
+  payload: {
+    jobTitle?: string | null
+    nationalInsuranceNumber?: string | null
+    dateOfBirth?: string | null
+    wageRate?: number | string | null
+    address?: string | null
+  }
+): Promise<Employee> => httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
+
+export default { addEmployee, getAllEmployees, getEmployeeLookup, getEmployeeById, updateEmployee }
