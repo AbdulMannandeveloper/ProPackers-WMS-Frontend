@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { fda as fdaApi, clients as clientsApi } from '@/api'
-import type { FdaCategory, FdaShipment } from '@/api/fda'
+import { fba as fbaApi, clients as clientsApi } from '@/api'
+import type { FbaCategory, FbaShipment } from '@/api/fba'
 import { useAuthStore } from '@/stores/auth'
 import {
   Badge,
@@ -16,7 +16,7 @@ import {
 type ClientOption = { id: string; companyName: string }
 
 /**
- * FDA consignments.
+ * FBA consignments.
  *
  * Deliberately the plainest screen in the app. These goods pass through rather
  * than being stored, so there is nothing to scan, no location to choose and no
@@ -24,12 +24,12 @@ type ClientOption = { id: string; companyName: string }
  * Marking it gone is what bills the client, per item, so that button says what
  * it will cost before it is pressed.
  */
-export default function FdaPage() {
+export default function FbaPage() {
   const role = useAuthStore((s) => s.role)
   const isAdmin = role === 'admin'
 
-  const [categories, setCategories] = useState<FdaCategory[]>([])
-  const [shipments, setShipments] = useState<FdaShipment[]>([])
+  const [categories, setCategories] = useState<FbaCategory[]>([])
+  const [shipments, setShipments] = useState<FbaShipment[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -63,15 +63,15 @@ export default function FdaPage() {
     setLoading(true)
     try {
       const [cats, ships, clientList] = await Promise.all([
-        fdaApi.getCategories(),
-        fdaApi.getShipments(),
+        fbaApi.getCategories(),
+        fbaApi.getShipments(),
         clientsApi.getClientLookup(),
       ])
       setCategories(cats || [])
       setShipments(ships || [])
       setClients(clientList || [])
     } catch (err) {
-      showToast(errorFrom(err, 'Failed to load FDA consignments.'), 'error')
+      showToast(errorFrom(err, 'Failed to load FBA consignments.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -85,7 +85,7 @@ export default function FdaPage() {
     const name = newCategory.trim()
     if (!name) return
     try {
-      await fdaApi.createCategory(name)
+      await fbaApi.createCategory(name)
       setNewCategory('')
       showToast(`Category "${name}" added.`)
       await loadData()
@@ -94,9 +94,9 @@ export default function FdaPage() {
     }
   }
 
-  const handleDeleteCategory = async (category: FdaCategory) => {
+  const handleDeleteCategory = async (category: FbaCategory) => {
     try {
-      await fdaApi.deleteCategory(category.id)
+      await fbaApi.deleteCategory(category.id)
       showToast(`Category "${category.name}" removed.`)
       await loadData()
     } catch (err) {
@@ -107,7 +107,7 @@ export default function FdaPage() {
 
   const openCreate = () => {
     if (categories.length === 0) {
-      showToast('Add an FDA category first — every consignment belongs to one.', 'error')
+      showToast('Add an FBA category first — every consignment belongs to one.', 'error')
       return
     }
     if (clients.length === 0) {
@@ -132,7 +132,7 @@ export default function FdaPage() {
 
     setSaving(true)
     try {
-      await fdaApi.recordArrival({
+      await fbaApi.recordArrival({
         categoryId: formCategoryId,
         clientId: formClientId,
         barcode: formBarcode,
@@ -149,9 +149,9 @@ export default function FdaPage() {
     }
   }
 
-  const handleDispatch = async (shipment: FdaShipment) => {
+  const handleDispatch = async (shipment: FbaShipment) => {
     try {
-      await fdaApi.dispatchShipment(shipment.id)
+      await fbaApi.dispatchShipment(shipment.id)
       showToast(`Consignment marked gone. ${shipment.count} item(s) billed.`)
       await loadData()
     } catch (err) {
@@ -159,9 +159,9 @@ export default function FdaPage() {
     }
   }
 
-  const handleCancel = async (shipment: FdaShipment) => {
+  const handleCancel = async (shipment: FbaShipment) => {
     try {
-      await fdaApi.cancelShipment(shipment.id)
+      await fbaApi.cancelShipment(shipment.id)
       showToast('Consignment voided.')
       await loadData()
     } catch (err) {
@@ -169,7 +169,7 @@ export default function FdaPage() {
     }
   }
 
-  const statusStyle = (status: FdaShipment['status']) =>
+  const statusStyle = (status: FbaShipment['status']) =>
     status === 'DISPATCHED'
       ? 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200'
       : status === 'CANCELLED'
@@ -194,7 +194,7 @@ export default function FdaPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-            FDA Consignments
+            FBA Consignments
           </h1>
           <p className="text-sm text-slate-500">
             Goods that pass through rather than being stored. Recorded by hand;
@@ -285,7 +285,7 @@ export default function FdaPage() {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Record FDA Arrival"
+        title="Record FBA Arrival"
       >
         <form onSubmit={handleRecordArrival} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -381,7 +381,7 @@ export default function FdaPage() {
       <Modal
         open={categoryModalOpen}
         onClose={() => setCategoryModalOpen(false)}
-        title="FDA Categories"
+        title="FBA Categories"
       >
         <div className="space-y-4">
           <p className="text-xs text-slate-400">

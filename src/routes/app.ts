@@ -8,7 +8,7 @@ import WarehouseLocationsPage from '@/pages/warehouse-locations/index'
 import AttendancePage from '@/pages/attendance/index'
 import InventoryPage from '@/pages/inventory/index'
 import ShipmentsPage from '@/pages/shipments/index'
-import FdaPage from '@/pages/fda/index'
+import FbaPage from '@/pages/fba/index'
 import InvoicesPage from '@/pages/invoices/index'
 import PayrollPage from '@/pages/payroll/index'
 import ExpensesPage from '@/pages/expenses/index'
@@ -29,7 +29,7 @@ export const appRoutes: RouteGroup = {
     { path: '/attendance', element: AttendancePage, title: 'Attendance', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/inventory', element: InventoryPage, title: 'Inventory', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/shipments', element: ShipmentsPage, title: 'Shipments', requireAuth: true, allowedRoles: ['admin', 'employee'] },
-    { path: '/fda', element: FdaPage, title: 'FDA Shipments', requireAuth: true, allowedRoles: ['admin', 'employee'] },
+    { path: '/fba', element: FbaPage, title: 'FBA Shipments', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/invoices', element: InvoicesPage, title: 'Invoices & Billing', requireAuth: true, allowedRoles: ['admin'] },
     { path: '/payroll', element: PayrollPage, title: 'Payroll', requireAuth: true, allowedRoles: ['admin', 'employee'] },
     { path: '/expenses', element: ExpensesPage, title: 'Expenses', requireAuth: true, allowedRoles: ['admin'] },
