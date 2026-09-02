@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Modal, Select } from '@/components/Shared Components'
 import type { WarehouseLocation, WarehouseLocationClass } from '@/api/warehouseLocations'
+import { useFeedback } from '@/hooks/useFeedback'
 
 interface Props {
   open: boolean
@@ -14,6 +15,8 @@ interface Props {
 }
 
 export default function WarehouseLocationFormModal({ open, onClose, onSave, classes, locations, initial, defaultParentId }: Props) {
+  const { dialog, showError, showMessage } = useFeedback()
+
   const [locationName, setLocationName] = useState('')
   const [locationClassId, setLocationClassId] = useState('')
   const [parentLocationId, setParentLocationId] = useState('')
@@ -51,12 +54,12 @@ export default function WarehouseLocationFormModal({ open, onClose, onSave, clas
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!locationName || !locationClassId) {
-      alert('Location name and class are required')
+      showMessage('Location name and class are required')
       return
     }
 
     if (selectedClass?.parentClassId && !parentLocationId) {
-      alert(`A parent location of class "${requiredParentClass?.name || 'parent class'}" is required.`)
+      showMessage(`A parent location of class "${requiredParentClass?.name || 'parent class'}" is required.`)
       return
     }
 
@@ -72,13 +75,14 @@ export default function WarehouseLocationFormModal({ open, onClose, onSave, clas
       )
       onClose()
     } catch (e) {
-      alert((e as any)?.message || 'Failed to save')
+      showError(e, 'Could not save this location')
     } finally {
       setLoading(false)
     }
   }
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -153,5 +157,8 @@ export default function WarehouseLocationFormModal({ open, onClose, onSave, clas
         </form>
       </div>
     </Modal>
+
+      {dialog}
+    </>
   )
 }

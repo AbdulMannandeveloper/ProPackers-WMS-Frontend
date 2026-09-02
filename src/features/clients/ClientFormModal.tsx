@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Modal } from '@/components/Shared Components'
+import { useFeedback } from '@/hooks/useFeedback'
 
 interface ClientFormModalProps {
   open: boolean
@@ -16,6 +17,8 @@ interface ClientFormModalProps {
 }
 
 export default function ClientFormModal({ open, onClose, onSave, initial }: ClientFormModalProps) {
+  const { dialog, showError, showMessage } = useFeedback()
+
   const [companyName, setCompanyName] = useState('')
   const [contactName, setContactName] = useState('')
   const [email, setEmail] = useState('')
@@ -42,7 +45,7 @@ export default function ClientFormModal({ open, onClose, onSave, initial }: Clie
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!companyName || !contactName || !email) {
-      alert('Company name, contact name, and email are required.')
+      showMessage('Company name, contact name, and email are required.')
       return
     }
 
@@ -60,13 +63,14 @@ export default function ClientFormModal({ open, onClose, onSave, initial }: Clie
       )
       onClose()
     } catch (e) {
-      alert((e as any)?.message || 'Failed to save client')
+      showError(e, 'Could not save this client')
     } finally {
       setLoading(false)
     }
   }
 
   return (
+    <>
     <Modal open={open} onClose={onClose}>
       <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
         <h3 className="text-lg font-semibold mb-4">{initial ? 'Edit Client' : 'New Client'}</h3>
@@ -128,5 +132,8 @@ export default function ClientFormModal({ open, onClose, onSave, initial }: Clie
         </form>
       </div>
     </Modal>
+
+      {dialog}
+    </>
   )
 }

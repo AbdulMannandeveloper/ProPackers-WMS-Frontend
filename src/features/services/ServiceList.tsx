@@ -3,6 +3,7 @@ import { services as apiServices } from '@/api'
 import { Button, Modal } from '@/components/Shared Components'
 import ServiceFormModal from './ServiceFormModal'
 import { Search, Pencil, Trash2 } from 'lucide-react'
+import { useFeedback } from '@/hooks/useFeedback'
 
 type Service = {
   id: string
@@ -12,6 +13,8 @@ type Service = {
 }
 
 export default function ServiceList() {
+  const { dialog, showError } = useFeedback()
+
   const [items, setItems] = useState<Service[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -73,7 +76,7 @@ export default function ServiceList() {
       setConfirmDelete(null)
       await load()
     } catch (e) {
-      alert((e as any)?.message || 'Failed to delete service')
+      showError(e, 'Could not delete this service')
     } finally {
       setActionLoading(false)
     }
@@ -93,6 +96,7 @@ export default function ServiceList() {
   const deleteLabel = confirmDelete?.description || 'this service'
 
   return (
+    <>
     <div className="bg-white rounded-xl shadow-sm border border-border">
       <div className="p-5 border-b border-border space-y-4">
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
@@ -208,5 +212,8 @@ export default function ServiceList() {
         )}
       </div>
     </div>
+
+      {dialog}
+    </>
   )
 }

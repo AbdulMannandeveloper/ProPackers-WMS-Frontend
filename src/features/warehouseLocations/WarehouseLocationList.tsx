@@ -6,6 +6,7 @@ import WarehouseLocationFormModal from './WarehouseLocationFormModal'
 import WarehouseExplorer from './WarehouseExplorer'
 import { useWarehouseMap, depthStyle } from './useWarehouseMap'
 import type { WarehouseLocation, WarehouseLocationClass } from '@/api/warehouseLocations'
+import { useFeedback } from '@/hooks/useFeedback'
 
 type ClassDraft = {
   name: string
@@ -54,6 +55,8 @@ const buildClassLadder = (classes: WarehouseLocationClass[]) => {
 }
 
 export default function WarehouseLocationList() {
+  const { dialog, showError, showMessage } = useFeedback()
+
   const { locations: items, classes, stockLevels, roots, nodeById, loading, error, reload } = useWarehouseMap()
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -108,7 +111,7 @@ export default function WarehouseLocationList() {
 
   const handleSaveClass = async () => {
     if (!classDraft.name.trim()) {
-      alert('Class name is required.')
+      showMessage('Class name is required.')
       return
     }
 
@@ -131,7 +134,7 @@ export default function WarehouseLocationList() {
       setClassDraft({ name: '', description: '', parentClassId: '' })
       await reload()
     } catch (e) {
-      alert((e as any)?.response?.data?.error || (e as any)?.message || 'Failed to save class')
+      showError(e, 'Could not save this class')
     } finally {
       setClassSaving(false)
     }
@@ -169,11 +172,7 @@ export default function WarehouseLocationList() {
       setConfirmLocation(null)
       await reload()
     } catch (e) {
-      alert(
-        (e as any)?.response?.data?.error ||
-          (e as any)?.message ||
-          `Failed to delete ${confirmClass ? 'class' : 'location'}`,
-      )
+      showError(e, `Could not delete that ${confirmClass ? 'class' : 'location'}`)
     } finally {
       setActionLoading(false)
     }
@@ -186,6 +185,7 @@ export default function WarehouseLocationList() {
       : null
 
   return (
+    <>
     <div className="space-y-4">
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
 
@@ -506,5 +506,8 @@ export default function WarehouseLocationList() {
         </div>
       )}
     </div>
+
+      {dialog}
+    </>
   )
 }

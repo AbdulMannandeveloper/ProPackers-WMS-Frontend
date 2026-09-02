@@ -25,6 +25,13 @@ export interface Employee {
   employeeUniqueNumber: string
   jobTitle?: string | null
   email?: string | null
+  /** Employment details. Admin-only to read and write — NI numbers and DOBs. */
+  nationalInsuranceNumber?: string | null
+  dateOfBirth?: string | null
+  wageRate?: number | string | null
+  address?: string | null
+  /** Read-only here: Payroll owns it, and it is what payroll multiplies out. */
+  baseSalary?: number | string | null
   user?: {
     id: string
     firstName: string
