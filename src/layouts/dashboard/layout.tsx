@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 import { 
   LayoutDashboard, Users, Briefcase, Layers, Map, Clock, 
   Package, Truck, FileText, Banknote, CreditCard, LineChart,
-  Menu, ChevronLeft, LogOut, ClipboardList
+  Menu, ChevronLeft, LogOut, ClipboardList, X
 } from 'lucide-react'
 
 type NavItem = {
@@ -69,6 +69,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   })
 
   const [isCollapsed, setIsCollapsed] = useState(false)
+
+  /**
+   * The mobile drawer.
+   *
+   * The sidebar is `hidden md:flex`, so below that breakpoint there was no
+   * navigation of any kind — a phone user could reach whichever page they
+   * landed on and go nowhere else. On a warehouse floor that is the device that
+   * matters most.
+   */
+  const [isMobileNavOpen, setMobileNavOpen] = useState(false)
+  const mobileNavRef = useRef<HTMLDivElement>(null)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
 
@@ -87,6 +98,34 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   // They match exactly; everything else matches itself or anything nested under
   // it, so a future detail page still highlights its section.
   const SECTION_ROOTS = ['/app', '/client']
+
+  // Navigating closes it. Without this, tapping a link leaves the drawer over
+  // the page you just asked for.
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (!isMobileNavOpen) return
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileNavOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+
+    // Focus goes into the drawer: it is the only way to navigate on this
+    // device, so it has to work without a pointer.
+    mobileNavRef.current?.focus()
+
+    // The page behind must not scroll under the overlay.
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previous
+    }
+  }, [isMobileNavOpen])
 
   const isActiveRoute = (href: string) => {
     if (SECTION_ROOTS.includes(href)) {
@@ -118,6 +157,76 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="dashboard-shell min-h-screen flex">
+      {/* ── Mobile navigation ──────────────────────────────────────────────
+          Below md the sidebar is hidden, so this is the only way to move
+          around. Same visibleNavItems as the sidebar, so the role filtering
+          applies unchanged and a client still sees only their portal. */}
+      {isMobileNavOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <button
+            type="button"
+            aria-label="Close navigation"
+            onClick={() => setMobileNavOpen(false)}
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+          />
+          <div
+            id="mobile-nav"
+            ref={mobileNavRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            className="dashboard-sidebar relative z-10 flex h-full w-72 max-w-[85%] flex-col border-r border-sidebar-border/80 text-sidebar-foreground outline-none"
+          >
+            <div className="flex h-16 items-center justify-between border-b border-sidebar-border/80 px-4">
+              <div className="flex items-center gap-3">
+                <div className="dashboard-brand-mark shrink-0">
+                  <img src="/Logo.png" alt="ProPackers logo" className="h-8 w-8 object-contain" />
+                </div>
+                <span className="font-semibold">ProPackers UK</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(false)}
+                aria-label="Close navigation"
+                className="rounded-lg p-2 text-sidebar-foreground/70 hover:bg-white/10"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+              {visibleNavItems.map(({ label, href, icon: Icon }) => (
+                <Link
+                  key={href}
+                  to={href}
+                  aria-current={isActiveRoute(href) ? 'page' : undefined}
+                  className={`flex items-center gap-4 rounded-xl px-4 py-3 transition-colors ${
+                    isActiveRoute(href)
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'text-sidebar-foreground/80 hover:bg-white/5'
+                  }`}
+                >
+                  <Icon size={20} className="shrink-0" />
+                  <span className="font-medium text-[15px]">{label}</span>
+                </Link>
+              ))}
+            </nav>
+
+            <div className="border-t border-sidebar-border/80 p-3">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-sidebar-foreground/80 hover:bg-white/5"
+              >
+                <LogOut size={18} />
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className={`dashboard-sidebar hidden md:flex flex-col border-r border-sidebar-border/80 text-sidebar-foreground transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-72'}`}>
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border/80 px-4 flex-shrink-0">
@@ -179,8 +288,20 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
         {/* Top Header */}
         <header className="h-16 shrink-0 flex items-center justify-between px-6 bg-transparent border-b border-transparent sticky top-0 z-40">
+          {/* The only way to navigate below md, where the sidebar is hidden. */}
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="Open navigation"
+            aria-expanded={isMobileNavOpen}
+            aria-controls="mobile-nav"
+            className="md:hidden -ml-2 rounded-lg p-2 text-foreground/70 transition-colors hover:bg-foreground/5"
+          >
+            <Menu size={22} />
+          </button>
+
           <div className="flex-1"></div>
-          
+
           {/* User Profile Dropdown */}
           <div className="relative" ref={profileRef}>
             <button 

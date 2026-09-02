@@ -1,19 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
-import { holidays as holidaysApi } from '@/api'
+import {
+  holidays as holidaysApi,
+  shipments as shipmentsApi,
+  stock as stockApi,
+  products as productsApi,
+  invoices as invoicesApi,
+} from '@/api'
 import type { Holiday } from '@/api/holidays'
+import { useAuthStore } from '@/stores/auth'
 
-const kpis = [
-  { label: 'Inbound orders', value: '128', delta: '+18%', tone: 'bg-blue-50', accent: 'bg-blue-500' },
-  { label: 'Active storage zones', value: '14', delta: '2 at capacity', tone: 'bg-emerald-50', accent: 'bg-emerald-500' },
-  { label: 'Low stock alerts', value: '07', delta: 'Needs review', tone: 'bg-orange-50', accent: 'bg-orange-500' },
-  { label: 'Tracked SKUs', value: '2.4k', delta: '+6% this week', tone: 'bg-violet-50', accent: 'bg-violet-500' },
-]
+/**
+ * These were two hardcoded arrays — "128 inbound orders", "2.4k tracked SKUs",
+ * "Zone A 82% full" — none of it real, against a warehouse holding 190 units
+ * and 2 SKUs. Numbers that look authoritative and are fiction are worse than no
+ * numbers, because eventually somebody acts on them.
+ *
+ * Everything below is derived from endpoints that already exist and that both
+ * admins and employees may call, which is who this page is for.
+ */
 
-const zones = [
-  { label: 'Zone A - Fast movers', pct: 82, color: 'bg-blue-500' },
-  { label: 'Zone B - Climate control', pct: 61, color: 'bg-emerald-500' },
-  { label: 'Zone C - Overflow', pct: 91, color: 'bg-orange-500' },
+const money = (value: number) =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value)
+
+const TONES = [
+  { tone: 'bg-blue-50', accent: 'bg-blue-500', bar: 'bg-blue-500' },
+  { tone: 'bg-emerald-50', accent: 'bg-emerald-500', bar: 'bg-emerald-500' },
+  { tone: 'bg-orange-50', accent: 'bg-orange-500', bar: 'bg-orange-500' },
+  { tone: 'bg-violet-50', accent: 'bg-violet-500', bar: 'bg-violet-500' },
+  { tone: 'bg-sky-50', accent: 'bg-sky-500', bar: 'bg-sky-500' },
 ]
 
 const formatHolidayRange = (holiday: Holiday) => {
@@ -28,9 +43,157 @@ const formatHolidayRange = (holiday: Holiday) => {
   return sameDay ? startLabel : `${startLabel} – ${endLabel}`
 }
 
+type Metrics = {
+  awaitingDispatch: number
+  readyToGo: number
+  dispatchedThisMonth: number
+  unitsInStock: number
+  trackedSkus: number
+  clientsWithStock: number
+  byLocation: { name: string; units: number }[]
+  draftInvoiceValue: number | null
+  draftInvoiceCount: number
+}
+
+const EMPTY: Metrics = {
+  awaitingDispatch: 0,
+  readyToGo: 0,
+  dispatchedThisMonth: 0,
+  unitsInStock: 0,
+  trackedSkus: 0,
+  clientsWithStock: 0,
+  byLocation: [],
+  draftInvoiceValue: null,
+  draftInvoiceCount: 0,
+}
+
 export default function DashboardIndex() {
+  const role = useAuthStore((s) => s.role)
+  const isAdmin = role === 'admin'
+
   const [holidays, setHolidays] = useState<Holiday[]>([])
   const [holidaysLoading, setHolidaysLoading] = useState(true)
+
+  const [metrics, setMetrics] = useState<Metrics>(EMPTY)
+  const [metricsLoading, setMetricsLoading] = useState(true)
+  const [metricsError, setMetricsError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setMetricsLoading(true)
+      const failed: string[] = []
+      const track = (label: string) => (err: unknown) => {
+        console.error(`Dashboard: failed to load ${label}`, err)
+        failed.push(label)
+        return [] as never[]
+      }
+
+      try {
+        const [shipments, stockLevels, products, invoices] = await Promise.all([
+          shipmentsApi.getAllShipments().catch(track('shipments')),
+          stockApi.getAllStockLevels().catch(track('stock')),
+          productsApi.getAllProducts().catch(track('products')),
+          // Admin-only endpoint. An employee getting nothing back here is
+          // expected, not a failure, so it is not tracked as one.
+          isAdmin ? invoicesApi.getAllInvoices().catch(() => []) : Promise.resolve([]),
+        ])
+
+        if (cancelled) return
+
+        const now = new Date()
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+        const open = shipments.filter(
+          (sh) => sh.status === 'PENDING' || sh.status === 'READY_FOR_DISPATCH'
+        )
+
+        // Units per location, busiest first. The original showed a percentage
+        // full, which cannot be computed: WarehouseLocation has no capacity
+        // column, so there is nothing to be a percentage of.
+        const perLocation = new Map<string, number>()
+        for (const level of stockLevels) {
+          const name = level.location?.locationName ?? 'Unassigned'
+          perLocation.set(name, (perLocation.get(name) ?? 0) + (level.currentQuantity ?? 0))
+        }
+
+        const drafts = invoices.filter((inv) => inv.status === 'DRAFT')
+
+        setMetrics({
+          awaitingDispatch: open.length,
+          readyToGo: open.filter((sh) => sh.status === 'READY_FOR_DISPATCH').length,
+          dispatchedThisMonth: shipments.filter(
+            (sh) => sh.status === 'DISPATCHED' && new Date(sh.createdAt) >= monthStart
+          ).length,
+          unitsInStock: stockLevels.reduce((sum, l) => sum + (l.currentQuantity ?? 0), 0),
+          trackedSkus: products.filter((p) => !p.isDeactivated).length,
+          clientsWithStock: new Set(
+            stockLevels.map((l) => l.product?.clientId).filter(Boolean)
+          ).size,
+          byLocation: [...perLocation.entries()]
+            .map(([name, units]) => ({ name, units }))
+            .sort((a, b) => b.units - a.units)
+            .slice(0, 5),
+          draftInvoiceValue: isAdmin
+            ? drafts.reduce((sum, inv) => sum + invoicesApi.grandTotal(inv), 0)
+            : null,
+          draftInvoiceCount: drafts.length,
+        })
+
+        setMetricsError(
+          failed.length > 0
+            ? `Could not load ${failed.join(' or ')} — those figures are missing.`
+            : ''
+        )
+      } finally {
+        if (!cancelled) setMetricsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isAdmin])
+
+  /** The tiles, in the order they read best. */
+  const kpis = useMemo(() => {
+    const tiles = [
+      {
+        label: 'Awaiting dispatch',
+        value: String(metrics.awaitingDispatch),
+        delta: metrics.readyToGo > 0 ? `${metrics.readyToGo} ready to go` : 'None ready yet',
+      },
+      {
+        label: 'Dispatched this month',
+        value: String(metrics.dispatchedThisMonth),
+        delta: metrics.dispatchedThisMonth > 0 ? 'Billed on dispatch' : 'Nothing yet',
+      },
+      {
+        label: 'Units in stock',
+        value: metrics.unitsInStock.toLocaleString('en-GB'),
+        delta:
+          metrics.clientsWithStock > 0
+            ? `across ${metrics.clientsWithStock} client${metrics.clientsWithStock === 1 ? '' : 's'}`
+            : 'No stock held',
+      },
+      {
+        label: 'Tracked SKUs',
+        value: String(metrics.trackedSkus),
+        delta: metrics.byLocation.length
+          ? `in ${metrics.byLocation.length} location${metrics.byLocation.length === 1 ? '' : 's'}`
+          : 'No locations in use',
+      },
+    ]
+
+    if (metrics.draftInvoiceValue !== null) {
+      tiles.push({
+        label: 'Draft invoices',
+        value: money(metrics.draftInvoiceValue),
+        delta: `${metrics.draftInvoiceCount} not yet approved`,
+      })
+    }
+
+    return tiles.map((tile, i) => ({ ...tile, ...TONES[i % TONES.length] }))
+  }, [metrics])
 
   useEffect(() => {
     let cancelled = false
@@ -137,8 +300,24 @@ export default function DashboardIndex() {
         </div>
       </section>
 
+      {metricsError && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {metricsError}
+        </div>
+      )}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((item) => {
+        {metricsLoading
+          ? // Skeletons rather than zeros: a real 0 and "not loaded yet" mean
+            // very different things to somebody checking whether work is waiting.
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={`skeleton-${i}`} className="dashboard-kpi animate-pulse">
+                <div className="h-11 w-11 rounded-2xl bg-muted" />
+                <div className="mt-4 h-8 w-20 rounded bg-muted" />
+                <div className="mt-2 h-4 w-28 rounded bg-muted" />
+              </div>
+            ))
+          : kpis.map((item) => {
           return (
             <div key={item.label} className="dashboard-kpi">
               <div className="flex items-center justify-between">
@@ -158,24 +337,51 @@ export default function DashboardIndex() {
         <div className="dashboard-panel p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Storage health</div>
-              <h2 className="mt-1 text-lg font-semibold text-foreground">Zone utilisation</h2>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Where the stock is</div>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Units by location</h2>
             </div>
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-muted text-muted-foreground">WM</span>
           </div>
 
           <div className="mt-5 space-y-4">
-            {zones.map((zone) => (
-              <div key={zone.label}>
-                <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-                  <span className="font-medium text-foreground">{zone.label}</span>
-                  <span className="text-muted-foreground">{zone.pct}% full</span>
-                </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div className={`h-full rounded-full ${zone.color}`} style={{ width: `${zone.pct}%` }} />
-                </div>
+            {metricsLoading ? (
+              <div className="space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={`bar-${i}`} className="animate-pulse">
+                    <div className="mb-2 h-4 w-40 rounded bg-muted" />
+                    <div className="h-2 rounded-full bg-muted" />
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : metrics.byLocation.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No stock recorded yet. Add products and check them in to see this
+                fill up.
+              </p>
+            ) : (
+              metrics.byLocation.map((loc, i) => {
+                // Scaled against the busiest location, not a capacity — there is
+                // no capacity column, so a percentage would be invented.
+                const busiest = metrics.byLocation[0]?.units || 1
+                const width = Math.max(4, Math.round((loc.units / busiest) * 100))
+                return (
+                  <div key={loc.name}>
+                    <div className="mb-2 flex items-center justify-between gap-4 text-sm">
+                      <span className="font-medium text-foreground truncate">{loc.name}</span>
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        {loc.units.toLocaleString('en-GB')} units
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${TONES[i % TONES.length].bar}`}
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
 
