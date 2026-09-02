@@ -5,6 +5,7 @@ import { Button, Modal } from '@/components/Shared Components'
 import { useAuthStore } from '@/stores/auth'
 import ClientFormModal from './ClientFormModal'
 import { Search, Briefcase, Pencil, KeyRound, Trash2 } from 'lucide-react'
+import { useFeedback } from '@/hooks/useFeedback'
 
 type Client = {
   id: string
@@ -19,6 +20,8 @@ type Client = {
 type ConfirmAction = 'delete' | 'resetEmail'
 
 export default function ClientList() {
+  const { dialog, showError, showMessage, showSuccess } = useFeedback()
+
   const [items, setItems] = useState<Client[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -94,11 +97,11 @@ export default function ClientList() {
 
   const handleSendResetEmail = (c: Client) => {
     if (!currentUserId) {
-      alert('Missing logged-in admin id. Please sign in again.')
+      showMessage('Missing logged-in admin id. Please sign in again.')
       return
     }
     if (!c.userId) {
-      alert('Client user ID not found.')
+      showMessage('Client user ID not found.')
       return
     }
     openConfirm('resetEmail', c)
@@ -114,24 +117,24 @@ export default function ClientList() {
         await load()
       } else if (confirmAction === 'resetEmail') {
         if (!currentUserId) {
-          alert('Missing logged-in admin id. Please sign in again.')
+          showMessage('Missing logged-in admin id. Please sign in again.')
           return
         }
         if (!confirmClient.userId) {
-          alert('Client user ID not found.')
+          showMessage('Client user ID not found.')
           return
         }
         await apiAuth.resetPasswordForUser({ adminId: currentUserId, userId: confirmClient.userId })
-        alert('Password reset email sent successfully.')
+        showSuccess('Password reset email sent successfully.')
       }
 
       setConfirmAction(null)
       setConfirmClient(null)
     } catch (e) {
       if (confirmAction === 'delete') {
-        alert((e as any)?.message || 'Failed to delete client')
+        showError(e, 'Could not delete this client')
       } else if (confirmAction === 'resetEmail') {
-        alert((e as any)?.response?.data?.error || (e as any)?.message || 'Unable to send reset email')
+        showError(e, 'Unable to send reset email')
       }
     } finally {
       setActionLoading(false)
@@ -186,6 +189,7 @@ export default function ClientList() {
   }, [items, searchQuery])
 
   return (
+    <>
     <div className="bg-white rounded-xl shadow-sm border border-border">
       <div className="p-5 border-b border-border space-y-4">
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
@@ -322,5 +326,8 @@ export default function ClientList() {
         )}
       </div>
     </div>
+
+      {dialog}
+    </>
   )
 }

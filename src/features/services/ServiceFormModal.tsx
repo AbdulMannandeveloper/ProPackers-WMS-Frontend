@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Modal } from '@/components/Shared Components'
+import { useFeedback } from '@/hooks/useFeedback'
 
 interface ServiceFormModalProps {
   open: boolean
@@ -14,6 +15,8 @@ interface ServiceFormModalProps {
 }
 
 export default function ServiceFormModal({ open, onClose, onSave, initial }: ServiceFormModalProps) {
+  const { dialog, showError, showMessage } = useFeedback()
+
   const [description, setDescription] = useState('')
   const [ideaPrice, setIdeaPrice] = useState('')
   const [unit, setUnit] = useState('')
@@ -34,7 +37,7 @@ export default function ServiceFormModal({ open, onClose, onSave, initial }: Ser
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!description || !ideaPrice || !unit) {
-      alert('Description, price, and unit are required.')
+      showMessage('Description, price, and unit are required.')
       return
     }
 
@@ -50,13 +53,14 @@ export default function ServiceFormModal({ open, onClose, onSave, initial }: Ser
       )
       onClose()
     } catch (e) {
-      alert((e as any)?.message || 'Failed to save service')
+      showError(e, 'Could not save this service')
     } finally {
       setLoading(false)
     }
   }
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -112,5 +116,8 @@ export default function ServiceFormModal({ open, onClose, onSave, initial }: Ser
         </div>
       </form>
     </Modal>
+
+      {dialog}
+    </>
   )
 }

@@ -3,8 +3,11 @@ import { employees as apiEmployees } from '@/api'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
 import type { Employee } from '@/api/types'
+import { useFeedback } from '@/hooks/useFeedback'
 
 export default function EmployeeList() {
+  const { dialog, showError, showMessage } = useFeedback()
+
   const [items, setItems] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -32,7 +35,7 @@ export default function EmployeeList() {
 
   const handleCreate = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    if (!adminId) return alert('You must be signed in as admin to create employees.')
+    if (!adminId) return showMessage('You must be signed in as admin to create employees.')
     try {
       await apiEmployees.addEmployee({ adminId, firstName, lastName, email })
       setShowCreate(false)
@@ -41,11 +44,12 @@ export default function EmployeeList() {
       setEmail('')
       await load()
     } catch (err: any) {
-      alert(err?.message || 'Failed to create employee')
+      showError(err, 'Could not create this employee')
     }
   }
 
   return (
+    <>
     <div className="bg-white rounded-xl p-4 shadow">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-medium">Employees</h2>
@@ -92,5 +96,8 @@ export default function EmployeeList() {
         </div>
       )}
     </div>
+
+      {dialog}
+    </>
   )
 }

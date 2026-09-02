@@ -4,6 +4,7 @@ import { services as apiServices } from '@/api'
 import { default as apiClientServices } from '@/api/clientServices'
 import type { Service } from '@/api/types'
 import { Save, Trash2, Plus } from 'lucide-react'
+import { useFeedback } from '@/hooks/useFeedback'
 
 interface ClientServiceEntry {
   id?: string
@@ -25,6 +26,8 @@ interface Props {
 }
 
 export default function ClientServicesModal({ open, clientId, onClose, onUpdated }: Props) {
+  const { dialog, showError, showMessage } = useFeedback()
+
   const [items, setItems] = useState<ClientServiceEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [allServices, setAllServices] = useState<Service[]>([])
@@ -71,7 +74,7 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
   const handleSaveEntry = async (entry: ClientServiceEntry) => {
     try {
       if (!entry.id) {
-        alert('Missing assignment id for this row. Please refresh and try again.')
+        showMessage('Missing assignment id for this row. Please refresh and try again.')
         void load()
         return
       }
@@ -89,7 +92,7 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
       void load()
       onUpdated?.()
     } catch (e) {
-      alert((e as any)?.response?.data?.error || (e as any)?.message || 'Failed to update')
+      showError(e, 'Could not update this rate')
     } finally {
       setSavingId(null)
     }
@@ -114,7 +117,7 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
       void load()
       onUpdated?.()
     } catch (e) {
-      alert((e as any)?.response?.data?.error || (e as any)?.message || 'Failed to delete')
+      showError(e, 'Could not remove this rate')
     } finally {
       setDeleting(false)
     }
@@ -177,10 +180,10 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
   }
 
   const handleAdd = async () => {
-    if (!clientId || !newServiceId) return alert('Select a service')
-    if (!newUnit.trim()) return alert('Unit is required.')
+    if (!clientId || !newServiceId) return showMessage('Select a service')
+    if (!newUnit.trim()) return showMessage('Unit is required.')
     if (items.some((x) => x.serviceId === newServiceId)) {
-      alert('This service is already assigned to the client. Edit the existing row instead.')
+      showMessage('This service is already assigned to the client. Edit the existing row instead.')
       return
     }
     setAdding(true)
@@ -197,13 +200,14 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
       void load()
       onUpdated?.()
     } catch (e) {
-      alert((e as any)?.response?.data?.error || (e as any)?.message || 'Failed to add')
+      showError(e, 'Could not add this service')
     } finally {
       setAdding(false)
     }
   }
 
   return (
+    <>
     <>
       <Modal
         open={open}
@@ -509,6 +513,9 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
           Are you sure you want to delete this client-service assignment?
         </p>
       </Modal>
+    </>
+
+      {dialog}
     </>
   )
 }

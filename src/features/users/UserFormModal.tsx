@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Modal, Input, Button } from '@/components/Shared Components'
 import type { User } from './types'
+import { useFeedback } from '@/hooks/useFeedback'
 
 type Props = {
   open: boolean
@@ -10,6 +11,8 @@ type Props = {
 }
 
 export default function UserFormModal({ open, onClose, onSave, initial }: Props) {
+  const { dialog, showError, showMessage } = useFeedback()
+
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -35,7 +38,7 @@ export default function UserFormModal({ open, onClose, onSave, initial }: Props)
 
   const submit = async () => {
     if (!firstName.trim() || !lastName.trim() || !email.trim()) {
-      alert('First name, last name and email are required')
+      showMessage('First name, last name and email are required')
       return
     }
 
@@ -44,13 +47,14 @@ export default function UserFormModal({ open, onClose, onSave, initial }: Props)
       await onSave({ firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), username: username?.trim() || undefined, role }, initial?.id)
       onClose()
     } catch (e) {
-      alert((e as any)?.message || 'Unable to save')
+      showError(e, 'Unable to save this user')
     } finally {
       setSaving(false)
     }
   }
 
   return (
+    <>
     <Modal open={open} onClose={onClose} title={initial ? 'Edit User' : 'New User'} size="md">
       <div className="grid grid-cols-1 gap-3">
         <label className="text-sm">First name</label>
@@ -77,5 +81,8 @@ export default function UserFormModal({ open, onClose, onSave, initial }: Props)
         <Button onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
       </div>
     </Modal>
+
+      {dialog}
+    </>
   )
 }

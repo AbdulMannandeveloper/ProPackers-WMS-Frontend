@@ -6,10 +6,13 @@ import { Search, Pencil, KeyRound, Trash2, UserX, UserCheck } from 'lucide-react
 import type { User } from './types'
 import UserFormModal from './UserFormModal'
 import { useAuthStore } from '@/stores/auth'
+import { useFeedback } from '@/hooks/useFeedback'
 
 type ConfirmAction = 'delete' | 'toggleActive' | 'resetEmail'
 
 export default function UserList() {
+  const { dialog, showError, showMessage, showSuccess } = useFeedback()
+
   const [items, setItems] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -84,7 +87,7 @@ export default function UserList() {
 
   const handleToggleActive = (u: User) => {
     if (!u.hasPassword) {
-      alert('Cannot change active state until this user has completed their password setup.')
+      showMessage('Cannot change active state until this user has completed their password setup.')
       return
     }
     openConfirm('toggleActive', u)
@@ -92,7 +95,7 @@ export default function UserList() {
 
   const handleSendResetEmail = (u: User) => {
     if (!currentUserId) {
-      alert('Missing logged-in admin id. Please sign in again.')
+      showMessage('Missing logged-in admin id. Please sign in again.')
       return
     }
     openConfirm('resetEmail', u)
@@ -116,22 +119,26 @@ export default function UserList() {
         await load()
       } else if (confirmAction === 'resetEmail') {
         if (!currentUserId) {
-          alert('Missing logged-in admin id. Please sign in again.')
+          showMessage('Missing logged-in admin id. Please sign in again.')
           return
         }
         await apiAuth.resetPasswordForUser({ adminId: currentUserId, userId: confirmUser.id })
-        alert('Password reset email sent successfully.')
+        showSuccess('Password reset email sent successfully.')
       }
 
       setConfirmAction(null)
       setConfirmUser(null)
     } catch (e) {
       if (confirmAction === 'delete') {
-        alert((e as any)?.response?.data?.error || (e as any)?.message || 'Unable to delete user')
+        showError(e, 'Unable to delete user')
       } else if (confirmAction === 'resetEmail') {
-        alert((e as any)?.response?.data?.error || (e as any)?.message || 'Unable to send reset email')
+        showError(e, 'Unable to send reset email')
+      } else {
+        // Was a silent catch: the server refuses this with a reason — for
+        // instance an account that has not completed password setup — and
+        // swallowing it left the toggle looking broken.
+        showError(e, 'Could not change that user\'s active state')
       }
-      // toggleActive: keep silent catch behavior from before
     } finally {
       setActionLoading(false)
     }
@@ -215,6 +222,7 @@ export default function UserList() {
   }, [items, searchQuery, roleFilter, statusFilter])
 
   return (
+    <>
     <div className="bg-white rounded-xl shadow-sm border border-border">
       <div className="p-5 border-b border-border space-y-4">
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
@@ -418,5 +426,8 @@ export default function UserList() {
         )}
       </div>
     </div>
+
+      {dialog}
+    </>
   )
 }
