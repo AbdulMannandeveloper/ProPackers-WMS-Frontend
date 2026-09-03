@@ -93,7 +93,7 @@ export default function WarehouseLocationFormModal({ open, onClose, onSave, clas
       footer={
         <div className='flex justify-end gap-2'>
           <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
-          <Button type="submit" form="warehouse-location-form" disabled={loading}>{loading ? 'Saving...' : 'Save'}</Button>
+          <Button type="submit" form="warehouse-location-form" loading={loading}>{loading ? 'Saving...' : 'Save'}</Button>
         </div>
       }
     >

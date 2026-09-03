@@ -443,7 +443,7 @@ export default function InvoicesPage() {
               </div>
               <Button
                 variant="outline"
-                disabled={savingRate || taxRateDraft === String(taxRate)}
+                loading={savingRate} disabled={taxRateDraft === String(taxRate)}
                 onClick={() => void handleSaveTaxRate()}
               >
                 {savingRate ? 'Saving…' : 'Save rate'}
@@ -459,7 +459,7 @@ export default function InvoicesPage() {
             <div className="py-16 text-center text-slate-400">Loading billing records...</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[68rem] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 text-slate-500">
                     <th className="px-6 py-4 font-semibold">Client</th>
@@ -649,7 +649,7 @@ export default function InvoicesPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Line Items</h3>
               <div className="overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-xl">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[52rem] text-left text-sm">
                   <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 border-b border-slate-100 dark:border-slate-800">
                     <tr>
                       <th className="p-3 font-semibold">Description</th>
@@ -739,7 +739,7 @@ export default function InvoicesPage() {
             <Button variant="secondary" onClick={() => setManualChargeModalOpen(false)} disabled={chargeSaving}>
               Cancel
             </Button>
-            <Button type="submit" form="manual-charge-form" disabled={chargeSaving}>
+            <Button type="submit" form="manual-charge-form" loading={chargeSaving}>
               {chargeSaving ? 'Adding...' : 'Add Charge'}
             </Button>
           </div>

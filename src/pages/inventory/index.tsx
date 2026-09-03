@@ -21,6 +21,7 @@ import {
   Modal,
 } from '@/components/Shared Components'
 import { BarcodeScanner } from '@/components/scanner'
+import { useDefaultSelection } from '@/hooks/useDefaultSelection'
 import { ScanResultPanel } from '@/features/inventory/ScanResultPanel'
 import { CheckInPanel } from '@/features/inventory/CheckInPanel'
 import JsBarcode from 'jsbarcode'
@@ -165,6 +166,15 @@ export default function InventoryPage() {
     void loadData()
   }, [role])
 
+  // Dropdown defaults are seeded when a modal opens, which is a moment that can
+  // arrive before these lists do. Re-seeding as they land stops a select from
+  // displaying a choice its state does not hold — the failure that made
+  // registering a product with opening stock refuse to save.
+  useDefaultSelection(clientId, setClientId, clients, !selectedProduct)
+  useDefaultSelection(openingLocationId, setOpeningLocationId, locations)
+  useDefaultSelection(adjustToLocationId, setAdjustToLocationId, locations)
+  useDefaultSelection(adjustFromLocationId, setAdjustFromLocationId, locations)
+
   // Save/Edit Product
   const handleOpenAddProduct = () => {
     setSelectedProduct(null)
@@ -242,6 +252,21 @@ export default function InventoryPage() {
     setScannedCode('')
   }
 
+  /**
+   * A scan that matched nothing, turned into a new product.
+   *
+   * Opens the ordinary product form with the scanned code already in the
+   * barcode field; client, SKU and the rest are typed by the operator. Opening
+   * stock lives in the same form, so one pass registers the SKU and puts it on
+   * a shelf — which is the whole point of scanning something in off the van.
+   */
+  const handleCreateFromScan = (code: string) => {
+    closeScanResult()
+    setScanMode(null)
+    handleOpenAddProduct()
+    setBarcode(code)
+  }
+
   const handleScanPick = async (picked: ScanMatch | Product) => {
     if (scanMode === 'checkin') {
       setCheckInProduct(picked as ScanMatch)
@@ -274,6 +299,24 @@ export default function InventoryPage() {
     if (!clientId || !skuCode || !productName) {
       showToast('Client, SKU Code, and Product Name are required.', 'error')
       return
+    }
+
+    // SKUs are unique per client, so a clash only matters within one. This is
+    // the guard that lets create-from-scan exist: a mis-typed or mis-scanned
+    // code stops here rather than becoming a second SKU nobody can tell apart.
+    if (!selectedProduct) {
+      const clash = products.find(
+        (p) =>
+          p.clientId === clientId &&
+          p.skuCode.trim().toLowerCase() === skuCode.trim().toLowerCase(),
+      )
+      if (clash) {
+        showToast(
+          `${clients.find((c) => c.id === clientId)?.companyName ?? 'This client'} already has SKU ${clash.skuCode} (${clash.productName}). Use a different SKU, or attach the barcode to that product instead.`,
+          'error',
+        )
+        return
+      }
     }
 
     const addingOpeningStock = !selectedProduct && withOpeningStock
@@ -816,6 +859,7 @@ export default function InventoryPage() {
                   <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                     <Input
                       placeholder="Search by SKU code..."
+              loading={loading}
                       value={skuSearch}
                       onChange={(e) => setSkuSearch(e.target.value)}
                       className="max-w-xs"
@@ -838,7 +882,7 @@ export default function InventoryPage() {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full min-w-[60rem] text-left text-sm">
                       <thead>
                         <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
                           <th className="pb-3 font-semibold">SKU Code</th>
@@ -972,7 +1016,7 @@ export default function InventoryPage() {
                     </Select>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full min-w-[45rem] text-left text-sm">
                       <thead>
                         <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
                           <th className="pb-3 font-semibold">Product SKU</th>
@@ -1087,7 +1131,7 @@ export default function InventoryPage() {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full min-w-[52rem] text-left text-sm">
                       <thead>
                         <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
                           <th className="pb-3 font-semibold">Timestamp</th>
@@ -1207,7 +1251,7 @@ export default function InventoryPage() {
                               </div>
                               <span className="text-sm font-bold text-rose-600">{totalQty} units checked out</span>
                             </div>
-                            <table className="w-full text-left text-sm">
+                            <table className="w-full min-w-[38rem] text-left text-sm">
                               <thead>
                                 <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
                                   <th className="px-4 pb-2 pt-3 font-semibold">Product SKU</th>
@@ -1246,7 +1290,7 @@ export default function InventoryPage() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-slate-500">{auditLogs.length} audit trail entries</span>
-                    <Button variant="secondary" size="sm" onClick={loadAuditLogs} disabled={auditLoading}>
+                    <Button variant="secondary" size="sm" onClick={loadAuditLogs} loading={auditLoading}>
                       {auditLoading ? 'Refreshing...' : 'Refresh Logs'}
                     </Button>
                   </div>
@@ -1328,7 +1372,7 @@ export default function InventoryPage() {
             <Button variant="secondary" onClick={() => setProductModalOpen(false)} disabled={productSaving}>
               Cancel
             </Button>
-            <Button type="submit" form="save-product-form" disabled={productSaving}>
+            <Button type="submit" form="save-product-form" loading={productSaving}>
               {productSaving ? 'Saving SKU...' : 'Save Product'}
             </Button>
           </div>
@@ -1336,10 +1380,10 @@ export default function InventoryPage() {
       >
         <form id="save-product-form" onSubmit={handleSaveProduct} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+            <label htmlFor="product-client" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
               Client Owner *
             </label>
-            <Select value={clientId} onChange={(e) => setClientId(e.target.value)} required>
+            <Select id="product-client" value={clientId} onChange={(e) => setClientId(e.target.value)} required>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.companyName}
@@ -1349,10 +1393,11 @@ export default function InventoryPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              <label htmlFor="product-sku" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                 SKU Code *
               </label>
               <Input
+                id="product-sku"
                 placeholder="PRO-PK-T-BLUE"
                 value={skuCode}
                 onChange={(e) => setSkuCode(e.target.value)}
@@ -1360,10 +1405,11 @@ export default function InventoryPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              <label htmlFor="product-barcode" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                 Barcode (optional)
               </label>
               <Input
+                id="product-barcode"
                 placeholder="501234567890"
                 value={barcode}
                 onChange={(e) => setBarcode(e.target.value)}
@@ -1371,10 +1417,11 @@ export default function InventoryPage() {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+            <label htmlFor="product-name" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
               Product Name *
             </label>
             <Input
+              id="product-name"
               placeholder="Polyester packing tape blue"
               value={productName}
               onChange={(e) => setProductName(e.target.value)}
@@ -1383,22 +1430,23 @@ export default function InventoryPage() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              <label htmlFor="product-colour" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                 Colour
               </label>
-              <Input placeholder="Blue" value={colour} onChange={(e) => setColour(e.target.value)} />
+              <Input id="product-colour" placeholder="Blue" value={colour} onChange={(e) => setColour(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              <label htmlFor="product-size" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                 Size
               </label>
-              <Input placeholder="Large" value={size} onChange={(e) => setSize(e.target.value)} />
+              <Input id="product-size" placeholder="Large" value={size} onChange={(e) => setSize(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              <label htmlFor="product-weight" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                 Weight (kg)
               </label>
               <Input
+                id="product-weight"
                 type="number"
                 step="0.001"
                 placeholder="0.25"
@@ -1408,10 +1456,11 @@ export default function InventoryPage() {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+            <label htmlFor="product-threshold" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
               Low Stock Threshold Limit *
             </label>
             <Input
+              id="product-threshold"
               type="number"
               min="0"
               value={thresholdLimit}
@@ -1440,10 +1489,11 @@ export default function InventoryPage() {
               {withOpeningStock && (
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                    <label htmlFor="opening-location" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                       Location *
                     </label>
                     <Select
+                      id="opening-location"
                       value={openingLocationId}
                       onChange={(e) => setOpeningLocationId(e.target.value)}
                       required
@@ -1457,10 +1507,11 @@ export default function InventoryPage() {
                     </Select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                    <label htmlFor="opening-quantity" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                       Quantity *
                     </label>
                     <Input
+                      id="opening-quantity"
                       type="number"
                       min="1"
                       value={openingQuantity}
@@ -1612,7 +1663,7 @@ export default function InventoryPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">Stock by location</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[38rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
                       <th className="pb-2 font-semibold">Location</th>
@@ -1653,7 +1704,7 @@ export default function InventoryPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">Recent movements</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[38rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
                       <th className="pb-2 font-semibold">When</th>
@@ -1716,7 +1767,7 @@ export default function InventoryPage() {
             <Button
               variant={selectedProduct?.isDeactivated ? 'default' : 'destructive'}
               onClick={handleToggleDeactivate}
-              disabled={deactivateSaving}
+              loading={deactivateSaving}
             >
               {deactivateSaving ? 'Processing...' : 'Confirm Action'}
             </Button>
@@ -1742,7 +1793,7 @@ export default function InventoryPage() {
             <Button variant="secondary" onClick={() => setAdjustStockOpen(false)} disabled={adjustSaving}>
               Cancel
             </Button>
-            <Button type="submit" form="adjust-stock-form" disabled={adjustSaving}>
+            <Button type="submit" form="adjust-stock-form" loading={adjustSaving}>
               {adjustSaving ? 'Saving Adjustment...' : 'Record Transaction'}
             </Button>
           </div>
@@ -1800,10 +1851,11 @@ export default function InventoryPage() {
               </Select>
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              <label htmlFor="adjust-quantity" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                 Quantity *
               </label>
               <Input
+                id="adjust-quantity"
                 type="number"
                 min="1"
                 value={adjustQuantity}
@@ -2024,7 +2076,7 @@ export default function InventoryPage() {
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)} disabled={productSaving}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDeleteProduct} disabled={productSaving}>
+            <Button variant="destructive" onClick={handleDeleteProduct} loading={productSaving}>
               {productSaving ? 'Deleting...' : 'Delete Product'}
             </Button>
           </div>
@@ -2107,6 +2159,7 @@ export default function InventoryPage() {
               closeScanResult()
             }}
             onError={(m) => showToast(m, 'error')}
+            onCreateNew={handleCreateFromScan}
           />
         )}
       </Modal>

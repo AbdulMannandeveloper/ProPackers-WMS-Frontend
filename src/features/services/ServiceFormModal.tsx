@@ -74,7 +74,7 @@ export default function ServiceFormModal({ open, onClose, onSave, initial }: Ser
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button type="submit" form="service-form" disabled={loading}>
+          <Button type="submit" form="service-form" loading={loading}>
             {loading ? 'Saving…' : 'Save'}
           </Button>
         </div>

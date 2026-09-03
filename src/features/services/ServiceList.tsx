@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { services as apiServices } from '@/api'
-import { Button, Modal } from '@/components/Shared Components'
+import { Button, Modal, Spinner } from '@/components/Shared Components'
 import ServiceFormModal from './ServiceFormModal'
 import { Search, Pencil, Trash2 } from 'lucide-react'
 import { useFeedback } from '@/hooks/useFeedback'
@@ -114,6 +114,11 @@ export default function ServiceList() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            {loading && (
+              <span className="pointer-events-none absolute right-2.5 top-2.5 text-muted-foreground">
+                <Spinner label="Loading results" />
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -133,7 +138,7 @@ export default function ServiceList() {
             <Button variant="secondary" onClick={closeDeleteConfirm} disabled={actionLoading}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => void executeDelete()} disabled={actionLoading}>
+            <Button variant="destructive" onClick={() => void executeDelete()} loading={actionLoading}>
               {actionLoading ? 'Deleting…' : 'Delete'}
             </Button>
           </div>

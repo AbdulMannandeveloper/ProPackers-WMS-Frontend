@@ -2,9 +2,9 @@ import type { ReactNode } from 'react'
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="auth-shell min-h-screen overflow-hidden bg-slate-50">
+    <div className="auth-shell min-h-screen bg-slate-50">
       <div className="grid min-h-screen w-full lg:grid-cols-[48%_52%] xl:grid-cols-[50%_50%] 2xl:grid-cols-[51%_49%]">
-        <aside className="auth-shell__marketing hidden h-screen flex-col justify-between overflow-hidden px-8 py-8 text-white lg:flex">
+        <aside className="auth-shell__marketing sticky top-0 hidden h-screen flex-col justify-between overflow-y-auto px-8 py-8 text-white lg:flex">
           <div className="space-y-12">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-blue-900 shadow-lg shadow-black/20">
@@ -45,7 +45,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
-        <main className="flex h-screen items-center justify-center overflow-hidden px-4 sm:px-8 lg:px-10">
+        <main className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-8 lg:px-10">
           <div className="w-full max-w-[34rem]">{children}</div>
         </main>
       </div>

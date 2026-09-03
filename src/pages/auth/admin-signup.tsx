@@ -80,7 +80,7 @@ export default function AdminSignupPage() {
             <Link to="/auth/login" className="auth-button--secondary">
               Back
             </Link>
-            <Button type="submit" disabled={loading} className="auth-button">
+            <Button type="submit" loading={loading} className="auth-button">
               {loading ? 'Submitting…' : 'Create admin'}
             </Button>
           </div>

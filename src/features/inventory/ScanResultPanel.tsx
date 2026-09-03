@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 
 import { products as productsApi } from '@/api'
 import type { Product, ScanMatch } from '@/api/products'
+import { PackagePlus } from 'lucide-react'
+
 import { Badge, Button, Input } from '@/components/Shared Components'
 
 type Props = {
@@ -13,6 +15,8 @@ type Props = {
   onPick: (product: ScanMatch | Product) => void
   onAttached: () => void
   onError: (message: string) => void
+  /** Opens the product form with this code already in the barcode field. */
+  onCreateNew: (code: string) => void
 }
 
 const onHand = (m: ScanMatch) =>
@@ -34,6 +38,7 @@ export function ScanResultPanel({
   onPick,
   onAttached,
   onError,
+  onCreateNew,
 }: Props) {
   const [search, setSearch] = useState('')
   const [attaching, setAttaching] = useState<string | null>(null)
@@ -107,7 +112,7 @@ export function ScanResultPanel({
                 </div>
                 <Button
                   size="sm"
-                  disabled={attaching === p.id}
+                  loading={attaching === p.id}
                   onClick={() => attach(p)}
                 >
                   {attaching === p.id ? 'Attaching…' : 'Attach code'}
@@ -117,11 +122,19 @@ export function ScanResultPanel({
           )}
         </div>
 
-        {/* Creating a product from a scan is deliberately not offered: a mis-scan
-            would create a duplicate SKU, which is expensive to unpick later. */}
-        <p className="text-xs text-slate-400">
-          Genuinely new stock? Add the product from the catalogue first, then scan it.
-        </p>
+        {/* Attaching to an existing product stays the first thing offered,
+            because a mis-scan that creates a duplicate SKU is expensive to
+            unpick. Creating is the fallback, and the form checks the SKU
+            against this client's products before it commits. */}
+        <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+          <p className="mb-2 text-xs text-slate-400">
+            Genuinely new stock that is not in the catalogue yet?
+          </p>
+          <Button variant="outline" className="w-full" onClick={() => onCreateNew(code)}>
+            <PackagePlus size={16} className="mr-1" />
+            Register this as a new product
+          </Button>
+        </div>
       </div>
     )
   }

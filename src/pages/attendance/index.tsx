@@ -563,7 +563,7 @@ export default function AttendancePage() {
                 <div className="py-8 text-center text-sm text-slate-400">No shift records found.</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full min-w-[38rem] text-left text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 text-slate-500">
                         <th className="pb-3 font-medium">Date</th>
@@ -649,7 +649,7 @@ export default function AttendancePage() {
                     className="w-32"
                   />
                 </div>
-                <Button onClick={handleSaveShiftSettings} disabled={shiftSaving}>
+                <Button onClick={handleSaveShiftSettings} loading={shiftSaving}>
                   {shiftSaving ? 'Saving...' : 'Save Settings'}
                 </Button>
               </CardContent>
@@ -693,7 +693,7 @@ export default function AttendancePage() {
                       className="w-40"
                     />
                   </div>
-                  <Button onClick={handleAddHoliday} disabled={holidaySaving}>
+                  <Button onClick={handleAddHoliday} loading={holidaySaving}>
                     {holidaySaving ? 'Adding...' : 'Add Holiday'}
                   </Button>
                 </div>
@@ -787,7 +787,7 @@ export default function AttendancePage() {
                 <div className="py-8 text-center text-sm text-slate-400">No active employees found to display.</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full min-w-[45rem] text-left text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 text-slate-500">
                         <th className="pb-3 font-medium">Employee Name</th>
@@ -903,7 +903,7 @@ export default function AttendancePage() {
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={editLoading}>Cancel</Button>
-            <Button type="submit" form="edit-attendance-form" disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button>
+            <Button type="submit" form="edit-attendance-form" loading={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button>
           </div>
         }
       >
@@ -975,7 +975,7 @@ export default function AttendancePage() {
             <Button
               variant={leaveConfirm?.mode === 'clear' ? 'default' : 'destructive'}
               onClick={() => void executeLeaveAction()}
-              disabled={leaveLoading}
+              loading={leaveLoading}
             >
               {leaveLoading
                 ? 'Saving…'

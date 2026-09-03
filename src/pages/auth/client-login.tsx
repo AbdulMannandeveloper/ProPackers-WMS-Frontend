@@ -94,7 +94,7 @@ export default function ClientLoginPage() {
               <input type="password" className="auth-input" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} />
             </div>
 
-            <Button type="submit" className="auth-button" disabled={isLoading}>
+            <Button type="submit" className="auth-button" loading={isLoading}>
               {isLoading ? 'Signing in...' : 'Continue to OTP'}
             </Button>
           </form>

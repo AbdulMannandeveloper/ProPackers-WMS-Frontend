@@ -6,6 +6,8 @@ import { ProtectedRoute } from '@/protected-route'
 import { restoreSession } from '@/api/http-client'
 import { useAuthStore } from '@/stores/auth'
 import { ErrorBoundary } from '@/error-boundary'
+import { TitledRoute } from '@/components/TitledRoute'
+import { TopProgressBar } from '@/components/TopProgressBar'
 import AuthLayout from '@/layouts/auth/layout'
 import { homeRoutes } from '@/routes/home.tsx'
 import { authRoutes } from '@/routes/auth'
@@ -37,15 +39,28 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+      <TopProgressBar />
       <Routes>
         <Route
           path="/admin-signup"
-          element={<AuthLayout><AdminSignupPage /></AuthLayout>}
+          element={
+            <AuthLayout>
+              <TitledRoute title="Admin Signup">
+                <AdminSignupPage />
+              </TitledRoute>
+            </AuthLayout>
+          }
         />
 
         <Route
           path="/setup-password"
-          element={<AuthLayout><SetupPasswordPage /></AuthLayout>}
+          element={
+            <AuthLayout>
+              <TitledRoute title="Set Your Password">
+                <SetupPasswordPage />
+              </TitledRoute>
+            </AuthLayout>
+          }
         />
 
         {/* auth routes */}
@@ -63,7 +78,9 @@ function App() {
                   allowedRoles={route.allowedRoles}
                 >
                   <Layout>
-                    <RouteComponent />
+                    <TitledRoute title={route.title}>
+                      <RouteComponent />
+                    </TitledRoute>
                   </Layout>
                 </ProtectedRoute>
               }
@@ -86,7 +103,9 @@ function App() {
                   allowedRoles={route.allowedRoles}
                 >
                   <Layout>
-                    <RouteComponent />
+                    <TitledRoute title={route.title}>
+                      <RouteComponent />
+                    </TitledRoute>
                   </Layout>
                 </ProtectedRoute>
               }
@@ -109,7 +128,9 @@ function App() {
                   allowedRoles={route.allowedRoles}
                 >
                   <Layout>
-                    <RouteComponent />
+                    <TitledRoute title={route.title}>
+                      <RouteComponent />
+                    </TitledRoute>
                   </Layout>
                 </ProtectedRoute>
               }
@@ -132,7 +153,9 @@ function App() {
                   allowedRoles={route.allowedRoles}
                 >
                   <Layout>
-                    <RouteComponent />
+                    <TitledRoute title={route.title}>
+                      <RouteComponent />
+                    </TitledRoute>
                   </Layout>
                 </ProtectedRoute>
               }

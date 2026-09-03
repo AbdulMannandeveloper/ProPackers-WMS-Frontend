@@ -354,6 +354,7 @@ export default function ClientPortalPage() {
               <div className="flex gap-4">
                 <Input
                   placeholder="Search by SKU or product name..."
+              loading={loading}
                   value={inventorySearch}
                   onChange={(e) => setInventorySearch(e.target.value)}
                   className="max-w-sm"
@@ -362,7 +363,7 @@ export default function ClientPortalPage() {
               <Card className="shadow-md border-slate-200">
                 <CardContent className="p-6">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full min-w-[38rem] text-left text-sm">
                       <thead>
                         <tr className="border-b border-slate-100 text-slate-500">
                           <th className="pb-3 font-semibold">SKU Code</th>
@@ -426,7 +427,7 @@ export default function ClientPortalPage() {
             <Card>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full min-w-[45rem] text-left text-sm">
                     <thead className="border-b border-slate-100 text-slate-500">
                       <tr>
                         <th className="p-4 font-semibold">Order</th>
@@ -534,7 +535,7 @@ export default function ClientPortalPage() {
               <Card className="shadow-md border-slate-200">
                 <CardContent className="p-6">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full min-w-[38rem] text-left text-sm">
                       <thead>
                         <tr className="border-b border-slate-100 text-slate-500">
                           <th className="pb-3 font-semibold">Invoice ID</th>
@@ -720,7 +721,7 @@ export default function ClientPortalPage() {
               <div className="py-4 text-center text-slate-500">Loading line items...</div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[45rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 text-slate-500">
                       <th className="pb-3 font-semibold">Description</th>

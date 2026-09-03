@@ -243,7 +243,7 @@ export default function EmployeeAttendanceAnalyticsModal({ open, userId, userNam
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[45rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-border">
                       <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Month</th>

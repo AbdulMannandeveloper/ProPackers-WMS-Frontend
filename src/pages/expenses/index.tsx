@@ -300,7 +300,7 @@ export default function ExpensesPage() {
       <Card className="shadow-sm border-slate-200 dark:border-slate-800">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[45rem] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2 bg-slate-50/50 dark:bg-slate-900/10">
                   <th className="p-4 font-semibold">Category</th>
@@ -448,7 +448,7 @@ export default function ExpensesPage() {
             <Button type="button" variant="ghost" onClick={() => setAddExpenseModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving || uploading}>
+            <Button type="submit" loading={saving || uploading}>
               {saving ? 'Recording...' : 'Post Expense'}
             </Button>
           </CardFooter>
@@ -479,7 +479,7 @@ export default function ExpensesPage() {
             <Button type="button" variant="ghost" onClick={() => setAddCategoryModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" loading={saving}>
               {saving ? 'Creating...' : 'Create Category'}
             </Button>
           </CardFooter>

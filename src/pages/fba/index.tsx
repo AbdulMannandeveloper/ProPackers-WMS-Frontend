@@ -213,7 +213,7 @@ export default function FbaPage() {
 
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[60rem] text-left text-sm">
             <thead className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
               <tr>
                 <th className="p-4 font-semibold">Barcode</th>
@@ -370,7 +370,7 @@ export default function FbaPage() {
             <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" loading={saving}>
               {saving ? 'Saving…' : 'Record Arrival'}
             </Button>
           </div>
