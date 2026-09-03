@@ -78,7 +78,7 @@ export default function UserFormModal({ open, onClose, onSave, initial }: Props)
 
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button onClick={submit} loading={saving}>{saving ? 'Saving…' : 'Save'}</Button>
       </div>
     </Modal>
 

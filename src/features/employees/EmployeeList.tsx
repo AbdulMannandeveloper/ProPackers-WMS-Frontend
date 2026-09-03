@@ -149,13 +149,14 @@ export default function EmployeeList() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name, email or job title"
+              loading={loading}
               aria-label="Search employees"
             />
           </div>
         </div>
 
         <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[45rem] text-left text-sm">
             <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-semibold">Employee</th>
@@ -304,7 +305,7 @@ export default function EmployeeList() {
             <Button type="button" variant="outline" onClick={() => setEditing(null)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" loading={saving}>
               {saving ? 'Saving…' : 'Save'}
             </Button>
           </div>

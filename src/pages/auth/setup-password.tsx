@@ -162,7 +162,7 @@ export default function SetupPasswordPage() {
             <Link to="/auth/login" className="auth-button--secondary">
               Back
             </Link>
-            <Button type="submit" disabled={loading || !token} className="auth-button">
+            <Button type="submit" loading={loading} disabled={!token} className="auth-button">
               {loading ? 'Saving…' : 'Set password'}
             </Button>
           </div>

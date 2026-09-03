@@ -557,7 +557,7 @@ export default function ShipmentsPage() {
             <div className="py-12 text-center text-slate-500">Syncing shipments database...</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[60rem] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
                     <th className="pb-3 font-semibold">Shipment Ref</th>
@@ -670,7 +670,7 @@ export default function ShipmentsPage() {
             <Button variant="secondary" onClick={() => setCreateModalOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" form="create-shipment-form" disabled={saving}>
+            <Button type="submit" form="create-shipment-form" loading={saving}>
               {saving ? 'Creating Order...' : 'Create Shipment'}
             </Button>
           </div>
@@ -1036,18 +1036,15 @@ export default function ShipmentsPage() {
                   </div>
                   <Button
                     onClick={() => handleSaveTracking()}
-                    disabled={
-                      savingTracking ||
-                      normaliseTrackingId(trackingDraft) ===
-                        (selectedShipment.trackingId || '')
-                    }
+                    loading={savingTracking} disabled={normaliseTrackingId(trackingDraft) ===
+                        (selectedShipment.trackingId || '')}
                   >
                     {savingTracking ? 'Saving…' : 'Save'}
                   </Button>
                   {selectedShipment.trackingId && (
                     <Button
                       variant="outline"
-                      disabled={savingTracking}
+                      loading={savingTracking}
                       onClick={() => {
                         // Clearing is a save of the empty value, not just a
                         // blanked box — otherwise the number stays on the row.
@@ -1066,7 +1063,7 @@ export default function ShipmentsPage() {
             <div className="space-y-2">
               <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">Picking Checklist Items</h3>
               <div className="overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-xl">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[38rem] text-left text-sm">
                   <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-semibold border-b border-slate-100 dark:border-slate-800">
                     <tr>
                       <th className="p-3">Product SKU</th>

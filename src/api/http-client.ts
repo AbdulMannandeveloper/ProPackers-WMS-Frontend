@@ -4,6 +4,7 @@ import axios, {
   type AxiosResponse,
 } from 'axios'
 
+import { useRequestStore } from '@/lib/requests'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -113,12 +114,27 @@ AXIOS_INSTANCE.interceptors.response.use(
 /** Called on boot: recovers a session from the refresh cookie after a reload. */
 export const restoreSession = () => refreshAccessToken()
 
+/**
+ * Every API module calls through here, which makes it the one place that knows
+ * a request is outstanding — so the progress indicator is counted here rather
+ * than in the interceptors. A 401 that refreshes and replays is one request to
+ * the person waiting, even though the interceptors see it twice.
+ *
+ * `finally` rather than a success path: a counter that only decrements on 200
+ * sticks above zero the first time the network drops.
+ */
 export const httpClient = async <T = unknown>(
   config: AxiosRequestConfig,
 ): Promise<T> => {
-  const response: AxiosResponse<T> = await AXIOS_INSTANCE.request<T>(config)
+  const { start, finish } = useRequestStore.getState()
+  start()
+  try {
+    const response: AxiosResponse<T> = await AXIOS_INSTANCE.request<T>(config)
 
-  return response.data
+    return response.data
+  } finally {
+    finish()
+  }
 }
 
 export default httpClient

@@ -122,7 +122,7 @@ export function CheckInPanel({ product, locations, onBookedIn, onError, onDone }
       </div>
 
       <div className="flex gap-2">
-        <Button className="flex-1" onClick={submit} disabled={saving || !locationId}>
+        <Button className="flex-1" onClick={submit} loading={saving} disabled={!locationId}>
           {saving ? 'Booking in…' : 'Book in'}
         </Button>
         <Button variant="secondary" onClick={onDone}>

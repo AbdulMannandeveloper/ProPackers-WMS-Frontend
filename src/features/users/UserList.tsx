@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { users as apiUsers, auth as apiAuth } from '@/api'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/Shared Components'
 import { Modal } from '@/components/Shared Components'
 import { Search, Pencil, KeyRound, Trash2, UserX, UserCheck } from 'lucide-react'
 import type { User } from './types'
@@ -235,11 +236,16 @@ export default function UserList() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <input 
               type="text" 
-              placeholder="Search users..." 
+              placeholder="Search users..."
               className="pl-9 h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            {loading && (
+              <span className="pointer-events-none absolute right-2.5 top-2.5 text-muted-foreground">
+                <Spinner label="Loading results" />
+              </span>
+            )}
           </div>
           
           <div className="flex gap-3 w-full sm:w-auto">
@@ -285,7 +291,7 @@ export default function UserList() {
             <Button
               variant={confirmButtonVariant}
               onClick={() => void executeConfirmAction()}
-              disabled={actionLoading}
+              loading={actionLoading}
             >
               {confirmButtonLabel}
             </Button>

@@ -5,6 +5,8 @@ import { cva, type VariantProps } from 'class-variance-authority'
 
 import { cn } from '@/lib/utils'
 
+import { Spinner } from './spinner'
+
 const buttonVariants = cva(
   'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
   {
@@ -35,17 +37,53 @@ export interface ButtonProps
   extends ComponentPropsWithoutRef<'button'>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  /**
+   * Shows a spinner and stops the button being pressed again.
+   *
+   * This is the half that matters: without it a slow save invites a second
+   * click, and the second click books the stock twice.
+   */
+  loading?: boolean
 }
 
-function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
+function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  loading = false,
+  disabled,
+  children,
+  ...props
+}: ButtonProps) {
   const Component = asChild ? Slot : 'button'
 
+  // asChild renders someone else's element and Slot accepts exactly one child,
+  // so a spinner cannot be injected there. Honour the disabling and leave the
+  // markup alone.
+  if (asChild) {
+    return (
+      <Component
+        data-slot='button'
+        className={cn(buttonVariants({ variant, size, className }))}
+        {...props}
+      >
+        {children}
+      </Component>
+    )
+  }
+
   return (
-    <Component
+    <button
       data-slot='button'
       className={cn(buttonVariants({ variant, size, className }))}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
-    />
+    >
+      {loading && <Spinner />}
+      {children}
+    </button>
   )
 }
 

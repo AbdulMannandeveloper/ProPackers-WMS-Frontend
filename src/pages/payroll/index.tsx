@@ -348,7 +348,7 @@ export default function PayrollPage() {
             /* ADMIN DETAILED SUMMARY */
             <div className="space-y-6">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full min-w-[52rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
                       <th className="pb-3 font-semibold">Employee</th>
@@ -653,7 +653,7 @@ export default function PayrollPage() {
             <Button type="button" variant="ghost" onClick={() => setBaseSalaryModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" loading={saving}>
               {saving ? 'Saving...' : 'Update Base'}
             </Button>
           </CardFooter>
@@ -709,7 +709,7 @@ export default function PayrollPage() {
             <Button type="button" variant="ghost" onClick={() => setFineRuleModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" loading={saving}>
               {saving ? 'Saving...' : 'Apply Rule'}
             </Button>
           </CardFooter>
@@ -764,7 +764,7 @@ export default function PayrollPage() {
             <Button type="button" variant="ghost" onClick={() => setAddFineModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving} className="bg-rose-600 hover:bg-rose-700 text-white">
+            <Button type="submit" loading={saving} className="bg-rose-600 hover:bg-rose-700 text-white">
               {saving ? 'Saving...' : 'Deduct Pay'}
             </Button>
           </CardFooter>
@@ -819,7 +819,7 @@ export default function PayrollPage() {
             <Button type="button" variant="ghost" onClick={() => setAddBonusModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button type="submit" loading={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving ? 'Saving...' : 'Add Reward'}
             </Button>
           </CardFooter>
@@ -851,7 +851,7 @@ export default function PayrollPage() {
             <Button type="button" variant="ghost" onClick={() => setFinalizeModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" onClick={handleFinalizePayroll} disabled={saving} className="bg-cyan-600 hover:bg-cyan-700 text-white">
+            <Button type="button" onClick={handleFinalizePayroll} loading={saving} className="bg-cyan-600 hover:bg-cyan-700 text-white">
               {saving ? 'Locking...' : 'Lock & Post'}
             </Button>
           </CardFooter>

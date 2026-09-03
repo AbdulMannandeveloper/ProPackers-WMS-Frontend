@@ -30,5 +30,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // The page tests render large screens into jsdom and drive them through
+    // userEvent, which is slow under load: the shipments load test has flaked
+    // twice at the 5s default, and the inventory page needs more than that
+    // whenever the whole suite runs together. Raised so a green run means the
+    // behaviour is right rather than that the machine happened to be idle.
+    testTimeout: 20_000,
   },
 })

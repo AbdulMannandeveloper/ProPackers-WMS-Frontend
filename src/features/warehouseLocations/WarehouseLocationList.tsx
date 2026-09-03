@@ -229,7 +229,7 @@ export default function WarehouseLocationList() {
             <Button variant="secondary" onClick={closeConfirmModal} disabled={actionLoading}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => void executeDelete()} disabled={actionLoading}>
+            <Button variant="destructive" onClick={() => void executeDelete()} loading={actionLoading}>
               {actionLoading ? 'Deleting…' : 'Delete'}
             </Button>
           </div>
@@ -298,7 +298,7 @@ export default function WarehouseLocationList() {
                     <option key={klass.id} value={klass.id}>{klass.name}</option>
                   ))}
               </Select>
-              <Button onClick={handleSaveClass} disabled={classSaving}>
+              <Button onClick={handleSaveClass} loading={classSaving}>
                 {editingClassId ? (classSaving ? 'Saving...' : 'Save Class') : (classSaving ? 'Saving...' : 'Add Class')}
               </Button>
               {editingClassId && (

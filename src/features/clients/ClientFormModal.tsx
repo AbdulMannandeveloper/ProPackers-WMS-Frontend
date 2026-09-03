@@ -125,7 +125,7 @@ export default function ClientFormModal({ open, onClose, onSave, initial }: Clie
             <Button variant="secondary" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" loading={loading}>
               {loading ? 'Saving...' : 'Save'}
             </Button>
           </div>

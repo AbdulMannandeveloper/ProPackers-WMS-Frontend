@@ -503,7 +503,7 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
             <Button variant="secondary" onClick={closeDeleteConfirm} disabled={deleting}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => void executeDelete()} disabled={deleting}>
+            <Button variant="destructive" onClick={() => void executeDelete()} loading={deleting}>
               {deleting ? 'Deleting…' : 'Delete'}
             </Button>
           </div>
