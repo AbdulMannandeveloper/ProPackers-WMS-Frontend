@@ -165,13 +165,6 @@
     overflow-y: auto;
   }
 
-  .auth-shell__marketing {
-    background:
-      linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.94)),
-      radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 32%);
-    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04), 18px 0 40px rgba(15, 23, 42, 0.08);
-  }
-
   .dashboard-brand-mark {
     @apply flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/8 shadow-lg;
   }
@@ -269,21 +262,8 @@
     @apply text-xs text-muted-foreground;
   }
 
-  .app-auth {
-    @apply min-h-screen flex items-center justify-center p-4 md:p-8;
-    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-  }
-
   .app-auth__panel {
     @apply w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)];
-  }
-
-  .app-auth__brand {
-    @apply mb-6 text-center;
-  }
-
-  .app-auth__brand-mark {
-    @apply mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm;
   }
 
   .app-auth__banner {
@@ -310,33 +290,12 @@
     @apply bg-white text-slate-900 shadow-sm;
   }
 
-  .auth-card {
-    @apply rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4 text-slate-800;
-  }
-
-  .auth-card--primary {
-    @apply border-blue-100 bg-blue-50 text-slate-900;
-  }
-
   .auth-label {
     @apply text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-600;
   }
 
   .auth-input {
     @apply mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-400/60 focus:ring-2 focus:ring-blue-400/15;
-  }
-
-  .auth-divider {
-    @apply relative my-5 text-center;
-  }
-
-  .auth-divider::before {
-    content: '';
-    @apply absolute left-0 right-0 top-1/2 h-px bg-slate-200;
-  }
-
-  .auth-divider span {
-    @apply relative inline-block bg-white px-3 text-xs uppercase tracking-[0.2em] text-slate-500;
   }
 
   .auth-helper-text {
@@ -380,24 +339,47 @@
     background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
   }
 
-  .auth-brand-row {
-    @apply flex items-center gap-3;
-  }
-
   .auth-brand-mark {
     @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm;
   }
 
-  .auth-brand-name {
-    @apply flex flex-col leading-tight;
+  /* Brand above the card: shown once for all four auth pages. */
+  .auth-masthead {
+    @apply mb-6 flex items-center justify-center gap-3;
   }
 
-  .auth-brand-name__title {
-    @apply text-[0.95rem] font-semibold tracking-tight text-slate-900;
+  .auth-masthead__title {
+    @apply text-lg font-semibold tracking-tight text-slate-900;
   }
 
-  .auth-brand-name__sub {
-    @apply text-[0.72rem] text-slate-500;
+  .auth-masthead__sub {
+    @apply text-xs text-slate-500;
+  }
+
+  .auth-colophon {
+    @apply mt-6 flex items-center justify-center gap-2 text-xs text-slate-400;
+  }
+
+  /* Staff / Client, as a segmented control rather than the footer link people
+     were missing. Two real routes underneath, styled as one toggle. */
+  .auth-role-tabs {
+    @apply grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1;
+  }
+
+  .auth-role-tab {
+    @apply rounded-xl px-3 py-2 text-center text-sm font-semibold no-underline transition-colors;
+  }
+
+  .auth-role-tab--active {
+    @apply bg-white text-slate-900 shadow-sm;
+  }
+
+  .auth-role-tab--idle {
+    @apply text-slate-500 hover:text-slate-800;
+  }
+
+  .auth-link--quiet {
+    @apply font-normal no-underline hover:underline;
   }
 
   /* The password field carries a reveal button, so the input needs room for it
@@ -422,40 +404,26 @@
     padding-left: calc(0.5em + 1rem);
   }
 
+  /* A caption and a rule, not a second row of pills: the role switcher above
+     is already segmented, and two of them read as two choices. */
   .auth-steps {
-    @apply flex items-center gap-2;
+    @apply space-y-1.5;
   }
 
-  .auth-step {
-    @apply flex flex-1 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors;
+  .auth-steps__caption {
+    @apply flex items-baseline justify-between text-xs font-medium text-slate-400;
   }
 
-  .auth-step__dot {
-    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold;
+  .auth-steps__label {
+    @apply text-slate-500;
   }
 
-  .auth-step--current {
-    @apply border-blue-200 bg-blue-50 text-blue-800;
+  .auth-steps__track {
+    @apply h-1 w-full overflow-hidden rounded-full bg-slate-200;
   }
 
-  .auth-step--current .auth-step__dot {
-    @apply bg-blue-600 text-white;
-  }
-
-  .auth-step--done {
-    @apply border-emerald-200 bg-emerald-50 text-emerald-800;
-  }
-
-  .auth-step--done .auth-step__dot {
-    @apply bg-emerald-600 text-white;
-  }
-
-  .auth-step--todo {
-    @apply border-slate-200 bg-slate-50 text-slate-400;
-  }
-
-  .auth-step--todo .auth-step__dot {
-    @apply bg-slate-200 text-slate-500;
+  .auth-steps__fill {
+    @apply h-full rounded-full bg-blue-600 transition-all duration-300;
   }
 
   .auth-footer {

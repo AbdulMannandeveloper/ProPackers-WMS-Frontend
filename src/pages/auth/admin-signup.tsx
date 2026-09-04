@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { AuthPanel } from '@/features/auth/AuthPanel'
 import { auth as apiAuth } from '@/api'
 
 export default function AdminSignupPage() {
@@ -40,52 +41,48 @@ export default function AdminSignupPage() {
   }
 
   return (
-    <div className="app-auth">
-      <div className="app-auth__panel p-6 sm:p-7 lg:p-8">
-        <div className="app-auth__brand text-left">
-          <div className="app-auth__brand-mark !mx-0">
-            <img src="/Logo.png" alt="logo" className="h-7 w-7 object-contain" />
-          </div>
-          <h1 className="auth-hero-title mt-4">Create admin account</h1>
-          <p className="auth-hero-subtitle">Set up the first administrator</p>
-        </div>
-        <div className="auth-note mt-4">This invitation is only used once during initial setup.</div>
-
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="auth-label">First name</label>
-              <input className="auth-input" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-            </div>
-            <div>
-              <label className="auth-label">Last name</label>
-              <input className="auth-input" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-            </div>
-          </div>
-
-          <div>
-            <label className="auth-label">Username</label>
-            <input className="auth-input" value={username} onChange={(e) => setUsername(e.target.value)} />
-          </div>
-
-          <div>
-            <label className="auth-label">Email</label>
-            <input type="email" className="auth-input" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-
-          {error ? <div className="auth-alert auth-alert--error">{error}</div> : null}
-          {message ? <div className="auth-alert auth-alert--success">{message}</div> : null}
-
-          <div className="grid grid-cols-2 gap-3">
-            <Link to="/auth/login" className="auth-button--secondary">
-              Back
-            </Link>
-            <Button type="submit" loading={loading} className="auth-button">
-              {loading ? 'Submitting…' : 'Create admin'}
-            </Button>
-          </div>
-        </form>
+    <AuthPanel
+      title="Create admin account"
+      subtitle="Set up the first administrator."
+      error={error || null}
+    >
+      <div className="auth-note mb-5">
+        This invitation is only used once during initial setup.
       </div>
-    </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="auth-label">First name</label>
+          <input className="auth-input" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+        </div>
+        <div>
+          <label className="auth-label">Last name</label>
+          <input className="auth-input" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+        </div>
+      </div>
+
+      <div>
+        <label className="auth-label">Username</label>
+        <input className="auth-input" value={username} onChange={(e) => setUsername(e.target.value)} />
+      </div>
+
+      <div>
+        <label className="auth-label">Email</label>
+        <input type="email" className="auth-input" value={email} onChange={(e) => setEmail(e.target.value)} required />
+      </div>
+
+      {message ? <div className="auth-alert auth-alert--success">{message}</div> : null}
+
+      <div className="grid grid-cols-2 gap-3">
+        <Link to="/auth/login" className="auth-button--secondary">
+          Back
+        </Link>
+        <Button type="submit" loading={loading} className="auth-button">
+          {loading ? 'Submitting…' : 'Create admin'}
+        </Button>
+      </div>
+    </form>
+    </AuthPanel>
   )
 }
