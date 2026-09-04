@@ -13,8 +13,6 @@ interface ClientServiceEntry {
   chargedPrice: number
   unit?: string
   /** Billed every period whether or not anything shipped. */
-  isRecurring?: boolean
-  recurringQuantity?: number | string
   service?: Service
 }
 
@@ -39,12 +37,6 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
   const [deleting, setDeleting] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
-
-  // A one-off charge against an already-agreed rate. Held per rate id so two
-  // rows cannot share a draft quantity.
-  const [chargeDrafts, setChargeDrafts] = useState<Record<string, string>>({})
-  const [charging, setCharging] = useState<string | null>(null)
-  const [chargeNote, setChargeNote] = useState<string>('')
 
   const load = async () => {
     if (!clientId) return
@@ -82,12 +74,6 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
       await apiClientServices.updateClientService(entry.id, {
         chargedPrice: Number(entry.chargedPrice),
         unit: entry.unit ?? '',
-        isRecurring: Boolean(entry.isRecurring),
-        // Only meaningful when recurring; the server defaults it to 1 rather
-        // than letting a standing charge bill nothing every month.
-        ...(entry.isRecurring
-          ? { recurringQuantity: Number(entry.recurringQuantity) || 1 }
-          : {}),
       })
       void load()
       onUpdated?.()
@@ -120,44 +106,6 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
       showError(e, 'Could not remove this rate')
     } finally {
       setDeleting(false)
-    }
-  }
-
-  /**
-   * Bills a quantity of this service to the client now, onto whichever invoice
-   * period is open. For work that happened once and is not tied to a shipment.
-   */
-  const handleChargeOnce = async (entry: ClientServiceEntry) => {
-    // id is optional on the draft row used when adding a new rate; a charge only
-    // makes sense against a rate that has been saved.
-    if (!clientId || !entry.id) return
-    const entryId = entry.id
-    const quantity = Number(chargeDrafts[entryId] ?? '')
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setError('Enter a quantity above zero to charge.')
-      return
-    }
-
-    setCharging(entryId)
-    setError('')
-    try {
-      await apiClientServices.chargeServiceToClient({
-        clientId,
-        clientServiceId: entryId,
-        quantity,
-      })
-      const total = (quantity * Number(entry.chargedPrice || 0)).toFixed(2)
-      setChargeNote(
-        `Charged ${quantity} x ${entry.service?.description ?? 'service'} — £${total} added to the open invoice.`,
-      )
-      setChargeDrafts((prev) => ({ ...prev, [entryId]: '' }))
-      onUpdated?.()
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.error || err?.message || 'Could not raise the charge.',
-      )
-    } finally {
-      setCharging(null)
     }
   }
 
@@ -226,14 +174,6 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
           <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
         ) : null}
 
-        {/* A one-off charge is invisible from this screen otherwise — it lands on
-            an invoice the admin is not looking at, so say what happened. */}
-        {chargeNote ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-            {chargeNote}
-          </div>
-        ) : null}
-
         {loading ? (
           <div className="rounded-xl border border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
             Loading services…
@@ -269,8 +209,6 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
                         <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Service</th>
                         <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Price (£)</th>
                         <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Unit</th>
-                        <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground" title="Billed every month whether or not anything ships">Monthly</th>
-                        <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground" title="Bill a quantity of this service to the open invoice now">Charge once</th>
                         <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground text-right">Actions</th>
                       </tr>
                     </thead>
@@ -316,81 +254,6 @@ export default function ClientServicesModal({ open, clientId, onClose, onUpdated
                                 )
                               }
                             />
-                          </td>
-                          <td className="px-4 py-3 align-middle">
-                            {/* A standing charge: raised every period even when
-                                nothing ships. This is how a client who stores
-                                with us but ships elsewhere gets billed at all. */}
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                className="size-4 rounded border-border"
-                                checked={Boolean(it.isRecurring)}
-                                aria-label={`Bill ${it.service?.description ?? 'this service'} every month`}
-                                onChange={(e) =>
-                                  setItems((s) =>
-                                    s.map((x) =>
-                                      x.id === it.id
-                                        ? {
-                                            ...x,
-                                            isRecurring: e.target.checked,
-                                            recurringQuantity:
-                                              Number(x.recurringQuantity) > 0
-                                                ? x.recurringQuantity
-                                                : 1,
-                                          }
-                                        : x,
-                                    ),
-                                  )
-                                }
-                              />
-                              {it.isRecurring && (
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  className="h-9 w-20 rounded-lg"
-                                  value={String(it.recurringQuantity ?? 1)}
-                                  aria-label={`Monthly quantity of ${it.service?.description ?? 'this service'}`}
-                                  onChange={(e) =>
-                                    setItems((s) =>
-                                      s.map((x) =>
-                                        x.id === it.id
-                                          ? { ...x, recurringQuantity: e.target.value }
-                                          : x,
-                                      ),
-                                    )
-                                  }
-                                />
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 align-middle">
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                placeholder="Qty"
-                                className="h-9 w-20 rounded-lg"
-                                value={chargeDrafts[it.id ?? ''] ?? ''}
-                                aria-label={`Quantity of ${it.service?.description ?? 'service'} to charge now`}
-                                onChange={(e) =>
-                                  setChargeDrafts((prev) => ({
-                                    ...prev,
-                                    [it.id ?? '']: e.target.value,
-                                  }))
-                                }
-                              />
-                              <button
-                                type="button"
-                                disabled={charging === it.id || !chargeDrafts[it.id ?? '']}
-                                onClick={() => void handleChargeOnce(it)}
-                                title="Adds this to the client's open invoice at the agreed rate"
-                                className="inline-flex h-9 items-center rounded-lg border border-border bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                              >
-                                {charging === it.id ? 'Charging…' : 'Charge'}
-                              </button>
-                            </div>
                           </td>
                           <td className="px-4 py-3 align-middle">
                             <div className="flex justify-end">
