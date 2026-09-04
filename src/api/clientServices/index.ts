@@ -13,9 +13,6 @@ export type ClientServiceRate = {
   serviceId: string
   chargedPrice: number | string
   unit?: string
-  /** Billed every period whether or not anything shipped. */
-  isRecurring?: boolean
-  recurringQuantity?: number | string
   service?: { id: string; description: string; unit: string; code?: string | null }
 }
 
@@ -49,29 +46,10 @@ export const updateClientService = (
   payload: {
     chargedPrice?: number
     unit?: string
-    isRecurring?: boolean
-    recurringQuantity?: number
   }
 ) =>
   httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
 
 export const deleteClientService = (id: string) => httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
 
-/**
- * Charges a quantity of a service the client has already agreed a rate for onto
- * whichever invoice period is open. For one-off work that is not tied to a
- * shipment; the recurring flag above covers the predictable monthly charges.
- */
-export const chargeServiceToClient = (payload: {
-  clientId: string
-  clientServiceId: string
-  quantity: number
-  description?: string
-}) =>
-  httpClient({
-    method: 'POST',
-    url: '/api/monthly-invoices/charge-service',
-    data: payload,
-  })
-
-export default { addClientService, getAllClientServices, getClientServicesByClientId, getClientServicesByServiceId, updateClientService, deleteClientService, chargeServiceToClient }
+export default { addClientService, getAllClientServices, getClientServicesByClientId, getClientServicesByServiceId, updateClientService, deleteClientService }
