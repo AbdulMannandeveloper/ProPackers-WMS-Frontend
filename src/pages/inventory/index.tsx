@@ -24,6 +24,7 @@ import { BarcodeScanner } from '@/components/scanner'
 import { useDefaultSelection } from '@/hooks/useDefaultSelection'
 import { ScanResultPanel } from '@/features/inventory/ScanResultPanel'
 import { CheckInPanel } from '@/features/inventory/CheckInPanel'
+import { ReceivingSession } from '@/features/inventory/ReceivingSession'
 import JsBarcode from 'jsbarcode'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -210,6 +211,8 @@ export default function InventoryPage() {
   // Two modes off the same scanner: 'find' jumps to the product, 'checkin' books
   // stock against a bin and keeps the camera running for the next carton.
   const [scanMode, setScanMode] = useState<'find' | 'checkin' | null>(null)
+  // Goods-in for a whole delivery, as opposed to the single lookup above.
+  const [receivingOpen, setReceivingOpen] = useState(false)
   const [scanResultOpen, setScanResultOpen] = useState(false)
   const [scannedCode, setScannedCode] = useState('')
   const [scanMatches, setScanMatches] = useState<ScanMatch[]>([])
@@ -791,8 +794,8 @@ export default function InventoryPage() {
             <Button variant="secondary" onClick={() => setScanMode('find')}>
               Scan to Find
             </Button>
-            <Button variant="secondary" onClick={() => setScanMode('checkin')}>
-              Scan to Check In
+            <Button variant="secondary" onClick={() => setReceivingOpen(true)}>
+              Receive Stock
             </Button>
             <Button variant="secondary" onClick={() => handleOpenAdjustStock()}>
               Adjust Stock Level
@@ -803,6 +806,27 @@ export default function InventoryPage() {
           </div>
         )}
       </div>
+
+      {receivingOpen ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <ReceivingSession
+            open={receivingOpen}
+            onClose={() => setReceivingOpen(false)}
+            locations={locations}
+            clients={clients}
+            catalogue={products}
+            onReceived={(summary) => {
+              showToast(
+                `Checked in ${summary.linesReceived} ${summary.linesReceived === 1 ? 'line' : 'lines'}` +
+                  (summary.productsCreated
+                    ? `, ${summary.productsCreated} new ${summary.productsCreated === 1 ? 'product' : 'products'} registered.`
+                    : '.'),
+              )
+              void loadData()
+            }}
+          />
+        </div>
+      ) : null}
 
       {/* KPIs Grid */}
       <div className="flex flex-col sm:flex-row gap-4 w-full">

@@ -96,8 +96,37 @@ export const createInventoryLedgerEntry = (payload: {
 }): Promise<InventoryLedgerEntry> =>
   httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
 
+/**
+ * Books a whole delivery in at once.
+ *
+ * One request, one transaction: a pallet of mixed stock either lands entirely
+ * or not at all. A line either points at a product that exists or carries the
+ * details of one to create.
+ */
+export const checkInBatch = (payload: {
+  toLocationId?: string
+  notes?: string
+  lines: Array<{
+    productId?: string
+    newProduct?: {
+      clientId: string
+      skuCode: string
+      productName: string
+      barcode?: string | null
+      colour?: string | null
+      size?: string | null
+      weight?: number | null
+      thresholdLimit?: number
+    }
+    quantity: number
+    toLocationId?: string
+  }>
+}): Promise<{ linesReceived: number; productsCreated: number }> =>
+  httpClient({ method: 'POST', url: `${BASE}/batch`, data: payload })
+
 export default {
   getAllInventoryLedgers,
+  checkInBatch,
   getInventoryLedgersPage,
   getInventoryLedgerByField,
   getInventoryLedgerByClientId,
