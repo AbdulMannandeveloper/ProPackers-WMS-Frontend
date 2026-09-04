@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Button } from '@/components/ui/button'
+
 import { auth as apiAuth } from '@/api'
+import { AuthPanel } from '@/features/auth/AuthPanel'
+import { AuthSteps } from '@/features/auth/AuthSteps'
+import { CredentialsForm } from '@/features/auth/CredentialsForm'
+import { OtpForm } from '@/features/auth/OtpForm'
+import { errorMessage } from '@/lib/errors'
 import { useAuthStore } from '@/stores/auth'
 
 export default function ClientLoginPage() {
@@ -19,6 +24,7 @@ export default function ClientLoginPage() {
 
   const [isLoading, setIsLoading] = useState(false)
   const [isVerifying, setIsVerifying] = useState(false)
+  const [isResending, setIsResending] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,11 +35,28 @@ export default function ClientLoginPage() {
     try {
       const res: any = await apiAuth.login({ identifier: email, password })
       setUserId(res.userId)
+      setOtp('')
       setShowOtp(true)
     } catch (err) {
-      setError((err as any)?.response?.data?.error || (err as any)?.message || 'Unable to sign in.')
+      setError(errorMessage(err, 'Unable to sign in.'))
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  /** Replays the login call, which is what issued the code in the first place. */
+  const handleResend = async () => {
+    if (isResending) return
+    setError('')
+    setIsResending(true)
+    try {
+      const res: any = await apiAuth.login({ identifier: email, password })
+      setUserId(res.userId)
+      setOtp('')
+    } catch (err) {
+      setError(errorMessage(err, 'Could not send another code.'))
+    } finally {
+      setIsResending(false)
     }
   }
 
@@ -62,69 +85,63 @@ export default function ClientLoginPage() {
       setDisplayName(name)
       navigate('/client')
     } catch (err) {
-      setError((err as any)?.response?.data?.error || (err as any)?.message || 'OTP verification failed.')
+      setError(errorMessage(err, 'OTP verification failed.'))
     } finally {
       setIsVerifying(false)
     }
   }
 
   return (
-    <div className="app-auth">
-      <div className="app-auth__panel p-6 sm:p-7 lg:p-8">
-        <div className="app-auth__brand text-left">
-          <div className="app-auth__brand-mark !mx-0">
-            <img src="/Logo.png" alt="logo" className="h-7 w-7 object-contain" />
-          </div>
-          <h1 className="auth-hero-title mt-4">Client sign in</h1>
-          <p className="auth-hero-subtitle">Access your services with email and OTP</p>
-        </div>
-
-        {error ? <div className="mt-5 auth-alert auth-alert--error">{error}</div> : null}
-
-        <div className="auth-divider"><span>Client sign in</span></div>
-
-        {!showOtp ? (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="auth-label">Email</label>
-              <input className="auth-input" placeholder="client@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading} />
-            </div>
-            <div>
-              <label className="auth-label">Password</label>
-              <input type="password" className="auth-input" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} />
-            </div>
-
-            <Button type="submit" className="auth-button" loading={isLoading}>
-              {isLoading ? 'Signing in...' : 'Continue to OTP'}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerify} className="space-y-4">
-            <div className="auth-card">
-              <div className="text-sm font-medium text-slate-900">OTP verification</div>
-              <p className="mt-1 text-sm text-slate-600">Enter the one-time code sent to your email or device.</p>
-            </div>
-            <div>
-              <label className="auth-label">One-time password</label>
-              <input className="auth-input tracking-[0.35em] text-center text-lg" placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} disabled={isVerifying} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="secondary" type="button" onClick={() => setShowOtp(false)} className="auth-button--secondary" disabled={isVerifying}>
-                Back
-              </Button>
-              <Button type="submit" className="auth-button" disabled={isVerifying}>
-                {isVerifying ? 'Verifying...' : 'Verify OTP'}
-              </Button>
-            </div>
-          </form>
-        )}
-
-        <div className="mt-5 text-sm text-slate-500">
+    <AuthPanel
+      title={showOtp ? 'Check your email' : 'Client sign in'}
+      subtitle={
+        showOtp
+          ? 'One more step to reach your account.'
+          : // The old copy said "email and OTP" while the form asked for a
+            // password, which read as a bug to anyone paying attention.
+            'View your inventory, shipments and invoices.'
+      }
+      error={error || null}
+      step={<AuthSteps current={showOtp ? 2 : 1} />}
+      footer={
+        <>
+          <p className="auth-footer__note">Staff member?</p>
           <Link to="/auth/login" className="auth-link">
-            Back to staff sign in
+            Staff sign in
           </Link>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {!showOtp ? (
+        <CredentialsForm
+          idPrefix="client"
+          identifierLabel="Email"
+          identifierPlaceholder="client@example.com"
+          identifierType="email"
+          identifier={email}
+          onIdentifierChange={setEmail}
+          password={password}
+          onPasswordChange={setPassword}
+          loading={isLoading}
+          submitLabel="Sign in"
+          onSubmit={handleSubmit}
+        />
+      ) : (
+        <OtpForm
+          idPrefix="client"
+          otp={otp}
+          onOtpChange={setOtp}
+          sentTo={email || null}
+          verifying={isVerifying}
+          onSubmit={handleVerify}
+          onBack={() => {
+            setShowOtp(false)
+            setError('')
+          }}
+          onResend={handleResend}
+          resending={isResending}
+        />
+      )}
+    </AuthPanel>
   )
 }
