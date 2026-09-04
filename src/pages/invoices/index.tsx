@@ -507,10 +507,10 @@ export default function InvoicesPage() {
                                 been sent, and the amount asked for must not move
                                 underneath the client. */}
                             {inv.status === 'DRAFT' && isAdmin ? (
-                              <label className="inline-flex items-center gap-2 cursor-pointer">
+                              <label className="inline-flex items-center gap-2 cursor-pointer [@media(pointer:coarse)]:py-2">
                                 <input
                                   type="checkbox"
-                                  className="size-4 rounded border-slate-300"
+                                  className="check-target"
                                   checked={Boolean(inv.taxApplied)}
                                   disabled={togglingTax === inv.id}
                                   aria-label={`Apply ${taxRate}% tax to this invoice`}

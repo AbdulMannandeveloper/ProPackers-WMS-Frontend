@@ -193,7 +193,7 @@ export default function ServiceList() {
                           title="Edit service"
                           aria-label="Edit service"
                           onClick={() => handleEditClick(s)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                          className="icon-action text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                         >
                           <Pencil className="size-3.5" strokeWidth={1.75} />
                         </button>
@@ -203,7 +203,7 @@ export default function ServiceList() {
                           title="Delete service"
                           aria-label="Delete service"
                           onClick={() => handleDeleteClick(s)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                          className="icon-action text-slate-500 hover:bg-rose-50 hover:text-rose-600"
                         >
                           <Trash2 className="size-3.5" strokeWidth={1.75} />
                         </button>

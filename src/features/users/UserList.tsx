@@ -376,7 +376,7 @@ export default function UserList() {
                             title="Edit user"
                             aria-label="Edit user"
                             onClick={() => handleEditClick(u)}
-                            className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                            className="icon-action text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                           >
                             <Pencil className="size-3.5" strokeWidth={1.75} />
                           </button>
@@ -385,7 +385,7 @@ export default function UserList() {
                             title="Send password reset email"
                             aria-label="Send password reset email"
                             onClick={() => handleSendResetEmail(u)}
-                            className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                            className="icon-action text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                           >
                             <KeyRound className="size-3.5" strokeWidth={1.75} />
                           </button>
@@ -396,7 +396,7 @@ export default function UserList() {
                               title="Delete pending user"
                               aria-label="Delete pending user"
                               onClick={() => handleDelete(u)}
-                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              className="icon-action text-slate-500 hover:bg-rose-50 hover:text-rose-600"
                             >
                               <Trash2 className="size-3.5" strokeWidth={1.75} />
                             </button>
@@ -406,7 +406,7 @@ export default function UserList() {
                               title="Deactivate user"
                               aria-label="Deactivate user"
                               onClick={() => handleToggleActive(u)}
-                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              className="icon-action text-slate-500 hover:bg-rose-50 hover:text-rose-600"
                             >
                               <UserX className="size-3.5" strokeWidth={1.75} />
                             </button>
@@ -416,7 +416,7 @@ export default function UserList() {
                               title="Activate user"
                               aria-label="Activate user"
                               onClick={() => handleToggleActive(u)}
-                              className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+                              className="icon-action text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
                             >
                               <UserCheck className="size-3.5" strokeWidth={1.75} />
                             </button>

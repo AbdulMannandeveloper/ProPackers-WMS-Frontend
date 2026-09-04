@@ -306,7 +306,7 @@ export default function ClientList() {
                           title="Manage services"
                           aria-label="Manage services"
                           onClick={() => handleViewServices(c)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                          className="icon-action text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                         >
                           <Briefcase className="size-3.5" strokeWidth={1.75} />
                         </button>
@@ -315,7 +315,7 @@ export default function ClientList() {
                           title="Bill for a service"
                           aria-label={`Bill ${c.companyName} for a service`}
                           onClick={() => handleBill(c)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                          className="icon-action text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                         >
                           <Receipt className="size-3.5" strokeWidth={1.75} />
                         </button>
@@ -324,7 +324,7 @@ export default function ClientList() {
                           title="Edit client"
                           aria-label="Edit client"
                           onClick={() => handleEditClick(c)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                          className="icon-action text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                         >
                           <Pencil className="size-3.5" strokeWidth={1.75} />
                         </button>
@@ -333,7 +333,7 @@ export default function ClientList() {
                           title="Send password reset email"
                           aria-label="Send password reset email"
                           onClick={() => handleSendResetEmail(c)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                          className="icon-action text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                         >
                           <KeyRound className="size-3.5" strokeWidth={1.75} />
                         </button>
@@ -343,7 +343,7 @@ export default function ClientList() {
                           title="Delete client"
                           aria-label="Delete client"
                           onClick={() => handleDelete(c)}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                          className="icon-action text-slate-500 hover:bg-rose-50 hover:text-rose-600"
                         >
                           <Trash2 className="size-3.5" strokeWidth={1.75} />
                         </button>
