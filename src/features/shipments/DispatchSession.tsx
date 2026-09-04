@@ -147,8 +147,31 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         return
       }
 
-      // Which bins, and how many from each. Outbound has to come off shelves
-      // that actually hold the stock, so this stays a decision.
+      // One bin holding it is not a decision — take one and carry on. This
+      // used to be an effect inside the split dialog, which StrictMode ran
+      // twice in development, adding the line twice and reading as quantity 2
+      // for a single scan.
+      const bins = binsFor(match)
+      if (bins.length === 1) {
+        setLines((prev) =>
+          mergeLines(prev, toPickLines(match, bins, { [bins[0].locationId]: 1 })),
+        )
+        signal('accepted')
+        return
+      }
+
+      // Nothing on the shelf: say so here rather than opening a dialog whose
+      // only content is an apology.
+      if (bins.length === 0) {
+        setError(
+          `${match.productName} has no stock available — every bin holding it is empty or already reserved.`,
+        )
+        signal('refused')
+        return
+      }
+
+      // Genuinely several bins. Outbound has to come off shelves that hold the
+      // stock, so this one stays a decision.
       setPicking(match)
       signal('accepted')
     } catch (err: unknown) {
@@ -534,36 +557,10 @@ function BinSplit({
   onCancel: () => void
   onPicked: (lines: PickLine[]) => void
 }) {
+  // Only ever opened for two or more bins: the caller resolves the single-bin
+  // and empty cases itself, so this renders a real choice or nothing.
   const bins = useMemo(() => binsFor(match), [match])
   const [quantities, setQuantities] = useState<Record<string, number>>({})
-
-  // One bin, one answer. Take one and get out of the way.
-  useEffect(() => {
-    if (bins.length === 1) {
-      onPicked(toPickLines(match, bins, { [bins[0].locationId]: 1 }))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bins])
-
-  if (bins.length === 0) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-6">
-        <div className="w-full max-w-md space-y-4 rounded-3xl bg-white p-6 text-center">
-          <p className="text-lg font-semibold text-slate-900">
-            {match.productName} has no stock available
-          </p>
-          <p className="text-slate-600">
-            Every bin holding it is empty or already reserved for another shipment.
-          </p>
-          <Button className="h-14 w-full text-base" onClick={onCancel}>
-            Back
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  if (bins.length === 1) return null
 
   // One problem per offending bin, so a three-bin split shows all of its
   // errors at once rather than one at a time.
