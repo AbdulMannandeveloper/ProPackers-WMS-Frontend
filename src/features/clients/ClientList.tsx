@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { clients as apiClients, auth as apiAuth } from '@/api'
 import ClientServicesModal from './ClientServicesModal'
+import BillServiceModal from './BillServiceModal'
 import { Button, Modal, Spinner } from '@/components/Shared Components'
 import { useAuthStore } from '@/stores/auth'
 import ClientFormModal from './ClientFormModal'
-import { Search, Briefcase, Pencil, KeyRound, Trash2 } from 'lucide-react'
+import { Search, Briefcase, Pencil, KeyRound, Receipt, Trash2 } from 'lucide-react'
 import { useFeedback } from '@/hooks/useFeedback'
 
 type Client = {
@@ -27,6 +28,8 @@ export default function ClientList() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Client | null>(null)
   const [servicesOpen, setServicesOpen] = useState(false)
+  const [billOpen, setBillOpen] = useState(false)
+  const [billClient, setBillClient] = useState<Client | null>(null)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const currentUserId = useAuthStore((s) => s.userId)
 
@@ -93,6 +96,12 @@ export default function ClientList() {
   const handleViewServices = (c: Client) => {
     setSelectedClientId(c.id)
     setServicesOpen(true)
+  }
+
+  /** Charging for work that happened once, as opposed to agreeing its price. */
+  const handleBill = (c: Client) => {
+    setBillClient(c)
+    setBillOpen(true)
   }
 
   const handleSendResetEmail = (c: Client) => {
@@ -217,6 +226,14 @@ export default function ClientList() {
       </div>
 
       <ClientFormModal open={modalOpen} onClose={() => setModalOpen(false)} onSave={handleSave} initial={editing} />
+      <BillServiceModal
+        open={billOpen}
+        clientId={billClient?.id ?? null}
+        clientName={billClient?.companyName ?? 'this client'}
+        onClose={() => setBillOpen(false)}
+        onCharged={(message) => showSuccess(message)}
+      />
+
       <ClientServicesModal open={servicesOpen} clientId={selectedClientId} onClose={() => setServicesOpen(false)} onUpdated={() => void load()} />
 
       <Modal
@@ -292,6 +309,15 @@ export default function ClientList() {
                           className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
                         >
                           <Briefcase className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Bill for a service"
+                          aria-label={`Bill ${c.companyName} for a service`}
+                          onClick={() => handleBill(c)}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          <Receipt className="size-3.5" strokeWidth={1.75} />
                         </button>
                         <button
                           type="button"

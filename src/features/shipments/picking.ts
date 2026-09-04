@@ -160,6 +160,51 @@ export const estimateDispatchCharge = (
 export const foreignLines = (lines: PickLine[], clientId: string) =>
   lines.filter((l) => l.clientId !== clientId)
 
+/**
+ * Whose shipment this is, worked out from what has been picked.
+ *
+ * The client used to be chosen before anything was picked, which is the wrong
+ * order — the goods already know whose they are. Null until the first pick.
+ */
+export const clientOfBasket = (lines: PickLine[]): string | null =>
+  lines.length > 0 ? lines[0].clientId : null
+
+/**
+ * Why this product cannot join the shipment, or null when it can.
+ *
+ * Takes the scan match rather than a line so it can name the client the goods
+ * actually belong to: "belongs to Nestle" tells the operator what to do next,
+ * where "wrong client" does not.
+ */
+export const describeForeignPick = (
+  match: Pick<ScanMatch, 'clientId' | 'productName'> & {
+    client?: { companyName?: string } | null
+  },
+  basketClientId: string | null,
+  basketClientName?: string | null,
+): string | null => {
+  if (basketClientId === null || match.clientId === basketClientId) return null
+
+  const theirs = match.client?.companyName ?? 'another client'
+  const ours = basketClientName ?? "this shipment's client"
+
+  return `${match.productName} belongs to ${theirs}. A shipment can only carry one client's goods, and this one is ${ours}'s.`
+}
+
+/**
+ * Sets one line's quantity. Indexed rather than keyed, because a basket can
+ * legitimately hold the same product twice — once per bin it is drawn from.
+ */
+export const setLineQuantity = (
+  lines: PickLine[],
+  index: number,
+  quantity: number,
+): PickLine[] =>
+  lines.map((l, i) => (i === index ? { ...l, quantity } : l))
+
+export const removeLineAt = (lines: PickLine[], index: number): PickLine[] =>
+  lines.filter((_, i) => i !== index)
+
 /** Merges a repeat pick of the same product and bin instead of duplicating it. */
 export const mergeLines = (existing: PickLine[], incoming: PickLine[]): PickLine[] => {
   const merged = [...existing]

@@ -16,6 +16,7 @@ import { clientRoutes } from '@/routes/client'
 import AdminSignupPage from '@/pages/auth/admin-signup'
 import SetupPasswordPage from '@/pages/auth/setup-password'
 import ReceivingPage from '@/pages/receiving/index'
+import DispatchPage from '@/pages/dispatch/index'
 import Error403 from '@/pages/error/403'
 import NotFound404 from '@/pages/error/404'
 
@@ -72,6 +73,18 @@ function App() {
             <ProtectedRoute requireAuth allowedRoles={['admin', 'employee']}>
               <TitledRoute title="Receive Stock">
                 <ReceivingPage />
+              </TitledRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Outbound owns the screen for the same reason goods-in does. */}
+        <Route
+          path="/dispatch"
+          element={
+            <ProtectedRoute requireAuth allowedRoles={['admin', 'employee']}>
+              <TitledRoute title="Dispatch">
+                <DispatchPage />
               </TitledRoute>
             </ProtectedRoute>
           }

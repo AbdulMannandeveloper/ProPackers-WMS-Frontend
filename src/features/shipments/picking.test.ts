@@ -11,6 +11,8 @@
 import { describe, it, expect } from 'vitest'
 
 import {
+  clientOfBasket,
+  describeForeignPick,
   availableIn,
   binsFor,
   totalAvailable,
@@ -235,5 +237,62 @@ describe('the charge estimate', () => {
 
   it('is zero for an empty basket on a real rate', () => {
     expect(estimateDispatchCharge([], 2)).toBe(0)
+  })
+})
+
+describe('whose shipment this is', () => {
+  // The client used to be chosen before anything was picked. The goods already
+  // know whose they are, so the first pick settles it.
+
+  it('is nobody until something is picked', () => {
+    expect(clientOfBasket([])).toBeNull()
+  })
+
+  it('is whoever the first line belongs to', () => {
+    const lines = [
+      { productId: 'p1', productName: 'Tape', skuCode: 'S1', clientId: 'c1', locationId: 'l1', locationName: 'A', quantity: 1 },
+      { productId: 'p2', productName: 'Wrap', skuCode: 'S2', clientId: 'c1', locationId: 'l1', locationName: 'A', quantity: 1 },
+    ]
+    expect(clientOfBasket(lines)).toBe('c1')
+  })
+})
+
+describe("refusing another client's goods", () => {
+  const match = {
+    clientId: 'c2',
+    productName: 'Blue Tape',
+    client: { companyName: 'Nestle' },
+  }
+
+  it('allows anything into an empty basket', () => {
+    // Nothing to disagree with yet — this pick is what sets the client.
+    expect(describeForeignPick(match, null)).toBeNull()
+  })
+
+  it('allows a product from the same client', () => {
+    expect(describeForeignPick({ ...match, clientId: 'c1' }, 'c1')).toBeNull()
+  })
+
+  it('refuses a product from a different client', () => {
+    expect(describeForeignPick(match, 'c1', 'Acme Ltd')).toBeTruthy()
+  })
+
+  it('names the product and both clients, so the operator knows what to do', () => {
+    // "wrong client" tells them nothing; the carton in their hand has a name
+    // on it and so does the shipment.
+    const message = describeForeignPick(match, 'c1', 'Acme Ltd')
+
+    expect(message).toContain('Blue Tape')
+    expect(message).toContain('Nestle')
+    expect(message).toContain('Acme Ltd')
+  })
+
+  it('copes with a client whose name did not come back', () => {
+    const message = describeForeignPick(
+      { clientId: 'c2', productName: 'Blue Tape' },
+      'c1',
+    )
+    expect(message).toContain('Blue Tape')
+    expect(message).not.toMatch(/undefined/)
   })
 })
