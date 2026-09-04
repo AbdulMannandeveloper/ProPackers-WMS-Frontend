@@ -371,6 +371,101 @@
     @apply rounded-[1.3rem] border border-slate-200 bg-slate-50 p-4;
   }
 
+  /* ── Sign-in pages ──────────────────────────────────────────────────── */
+
+  /* The gradient the sign-in panel floats on. Lives on the layout's <main>
+     rather than on a wrapper inside the panel, so there is only one
+     full-height box on the page. */
+  .auth-stage {
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  }
+
+  .auth-brand-row {
+    @apply flex items-center gap-3;
+  }
+
+  .auth-brand-mark {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm;
+  }
+
+  .auth-brand-name {
+    @apply flex flex-col leading-tight;
+  }
+
+  .auth-brand-name__title {
+    @apply text-[0.95rem] font-semibold tracking-tight text-slate-900;
+  }
+
+  .auth-brand-name__sub {
+    @apply text-[0.72rem] text-slate-500;
+  }
+
+  /* The password field carries a reveal button, so the input needs room for it
+     and the button has to sit inside the same rounded box. */
+  .auth-input-wrap {
+    @apply relative;
+  }
+
+  .auth-input--with-affix {
+    @apply pr-12;
+  }
+
+  .auth-affix-button {
+    @apply absolute inset-y-0 right-0 mt-2 flex w-12 items-center justify-center rounded-r-2xl text-slate-400 transition-colors hover:text-slate-600;
+  }
+
+  /* One field, not six boxes: six break paste and defeat one-time-code
+     autofill. Styled wide and spaced so it still reads as a code. */
+  .auth-input--code {
+    @apply text-center text-xl font-semibold tabular-nums;
+    letter-spacing: 0.5em;
+    padding-left: calc(0.5em + 1rem);
+  }
+
+  .auth-steps {
+    @apply flex items-center gap-2;
+  }
+
+  .auth-step {
+    @apply flex flex-1 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors;
+  }
+
+  .auth-step__dot {
+    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold;
+  }
+
+  .auth-step--current {
+    @apply border-blue-200 bg-blue-50 text-blue-800;
+  }
+
+  .auth-step--current .auth-step__dot {
+    @apply bg-blue-600 text-white;
+  }
+
+  .auth-step--done {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-800;
+  }
+
+  .auth-step--done .auth-step__dot {
+    @apply bg-emerald-600 text-white;
+  }
+
+  .auth-step--todo {
+    @apply border-slate-200 bg-slate-50 text-slate-400;
+  }
+
+  .auth-step--todo .auth-step__dot {
+    @apply bg-slate-200 text-slate-500;
+  }
+
+  .auth-footer {
+    @apply mt-7 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-slate-100 pt-5 text-sm;
+  }
+
+  .auth-footer__note {
+    @apply text-slate-500;
+  }
+
   .auth-note {
     @apply rounded-[1.3rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600;
   }
