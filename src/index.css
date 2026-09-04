@@ -344,6 +344,36 @@
   }
 
   /* Brand above the card: shown once for all four auth pages. */
+  /* ── Touch targets ──────────────────────────────────────────────────────
+     The row-action icon buttons: edit, delete, reset password, and so on.
+     32px is comfortable with a mouse and too small for a finger — the WCAG
+     minimum is 44.
+
+     Keyed on `pointer: coarse` rather than a width breakpoint, because the
+     thing that matters is what is doing the pointing. A 1024px tablet has
+     fingers; a 900px browser window on a laptop does not. */
+  .icon-action {
+    @apply inline-flex size-8 items-center justify-center rounded-md transition-colors;
+  }
+
+  @media (pointer: coarse) {
+    .icon-action {
+      @apply size-11;
+    }
+  }
+
+  /* A checkbox is 13px by default, which is nothing to aim at. The box stays
+     visually small; the *hittable* area grows on touch. */
+  .check-target {
+    @apply size-4 rounded border-slate-300;
+  }
+
+  @media (pointer: coarse) {
+    .check-target {
+      @apply size-6;
+    }
+  }
+
   .auth-masthead {
     @apply mb-6 flex items-center justify-center gap-3;
   }
@@ -380,6 +410,14 @@
 
   .auth-link--quiet {
     @apply font-normal no-underline hover:underline;
+  }
+
+  /* Inline in a footer line, so it cannot be 44px tall without pushing the
+     line apart — but it is still something a thumb has to find. */
+  @media (pointer: coarse) {
+    .auth-link--quiet {
+      @apply inline-block py-2;
+    }
   }
 
   /* The password field carries a reveal button, so the input needs room for it

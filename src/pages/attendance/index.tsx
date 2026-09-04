@@ -807,7 +807,7 @@ export default function AttendancePage() {
                             <button
                               type="button"
                               onClick={() => setAnalyticsUser({ id: user.id, name })}
-                              className="text-left hover:text-primary hover:underline"
+                              className="text-left hover:text-primary hover:underline [@media(pointer:coarse)]:py-3"
                               title="View attendance analytics"
                             >
                               {user.firstName} {user.lastName}

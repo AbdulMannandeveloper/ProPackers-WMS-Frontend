@@ -756,7 +756,7 @@ export default function ShipmentsPage() {
                                       <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-slate-600">
                                         <input
                                           type="checkbox"
-                                          className="size-4 rounded border-slate-300"
+                                          className="check-target"
                                           checked={chargeReturn[item.id] === true}
                                           onChange={(e) =>
                                             setChargeReturn((prev) => ({

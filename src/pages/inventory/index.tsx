@@ -837,7 +837,7 @@ export default function InventoryPage() {
             key={t.id}
             type="button"
             onClick={() => setActiveTab(t.id as any)}
-            className={`pb-3 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+            className={`pb-3 [@media(pointer:coarse)]:py-3 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
               activeTab === t.id
                 ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -873,12 +873,12 @@ export default function InventoryPage() {
                       onChange={(e) => setProductNameSearch(e.target.value)}
                       className="max-w-xs"
                     />
-                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none ml-auto">
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none ml-auto [@media(pointer:coarse)]:py-2">
                       <input
                         type="checkbox"
                         checked={hideDeactivated}
                         onChange={(e) => setHideDeactivated(e.target.checked)}
-                        className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                        className="check-target text-cyan-600 focus:ring-cyan-500"
                       />
                       Hide Deactivated
                     </label>
@@ -949,7 +949,7 @@ export default function InventoryPage() {
                                 <td className="py-4">
                                   <button
                                     type="button"
-                                    className="font-medium text-slate-700 dark:text-slate-300 hover:text-cyan-600 hover:underline transition-colors cursor-pointer"
+                                    className="font-medium text-slate-700 dark:text-slate-300 hover:text-cyan-600 hover:underline transition-colors cursor-pointer [@media(pointer:coarse)]:py-2"
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       if (p.clientId) handleOpenClientContact(p.clientId)
@@ -1481,7 +1481,7 @@ export default function InventoryPage() {
                   type="checkbox"
                   checked={withOpeningStock}
                   onChange={(e) => setWithOpeningStock(e.target.checked)}
-                  className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                  className="check-target text-cyan-600 focus:ring-cyan-500"
                 />
                 Add opening stock now
               </label>
