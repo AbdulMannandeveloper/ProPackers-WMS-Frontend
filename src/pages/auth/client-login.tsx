@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 
 import { auth as apiAuth } from '@/api'
 import { AuthPanel } from '@/features/auth/AuthPanel'
+import { AuthRoleTabs } from '@/features/auth/AuthRoleTabs'
 import { AuthSteps } from '@/features/auth/AuthSteps'
 import { CredentialsForm } from '@/features/auth/CredentialsForm'
 import { OtpForm } from '@/features/auth/OtpForm'
@@ -103,13 +104,11 @@ export default function ClientLoginPage() {
       }
       error={error || null}
       step={<AuthSteps current={showOtp ? 2 : 1} />}
+      tabs={showOtp ? undefined : <AuthRoleTabs />}
       footer={
-        <>
-          <p className="auth-footer__note">Staff member?</p>
-          <Link to="/auth/login" className="auth-link">
-            Staff sign in
-          </Link>
-        </>
+        <p className="auth-footer__note">
+          Your account is created by ProPackers. Contact us if you need access.
+        </p>
       }
     >
       {!showOtp ? (

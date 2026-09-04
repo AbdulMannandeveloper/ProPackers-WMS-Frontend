@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 
 import { auth as apiAuth } from '@/api'
 import { AuthPanel } from '@/features/auth/AuthPanel'
+import { AuthRoleTabs } from '@/features/auth/AuthRoleTabs'
 import { AuthSteps } from '@/features/auth/AuthSteps'
 import { CredentialsForm } from '@/features/auth/CredentialsForm'
 import { OtpForm } from '@/features/auth/OtpForm'
@@ -126,13 +127,13 @@ export default function LoginPage() {
       }
       error={error || null}
       step={<AuthSteps current={showOtp ? 2 : 1} />}
+      tabs={
+        /* Not on the code step: switching role with a code already sent
+           would strand you mid-flow. */
+        showOtp ? undefined : <AuthRoleTabs />
+      }
       footer={
-        <>
-          <p className="auth-footer__note">Admins and employees use the same sign in.</p>
-          <Link to="/auth/client-login" className="auth-link">
-            Client sign in
-          </Link>
-        </>
+        <p className="auth-footer__note">Admins and employees use the same sign in.</p>
       }
     >
       {!showOtp ? (

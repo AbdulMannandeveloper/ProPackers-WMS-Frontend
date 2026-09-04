@@ -1,44 +1,34 @@
 import type { ReactNode } from 'react'
 
 /**
- * The card both sign-in pages sit in.
+ * The card every auth page sits in.
  *
- * They were the same screen written twice, which is why they had drifted: the
- * staff page put its links in a row, the client page in a column, and each
- * carried a divider captioned with the title it sat directly beneath — "Client
- * sign in" above a rule reading "CLIENT SIGN IN". Shared chrome is what makes
- * the two look like one product rather than two similar screens.
+ * The brand lives in AuthLayout above this card, so the four pages that use it
+ * are identified once and identically. What is left here is the page's own
+ * content: an optional role switcher, a heading, an optional step indicator,
+ * an error slot, the form, and any page-specific footnote.
  */
 
 type Props = {
   title: string
   subtitle: string
-  /** Rendered above the form. Kept as a slot so each page owns its own error state. */
+  /** The Staff/Client switcher. Omitted on the code step and on the non-choice pages. */
+  tabs?: ReactNode
+  /** Rendered above the form. A slot so each page owns its own error state. */
   error?: string | null
-  /** "Step 2 of 2" and the like; shown between the heading and the form. */
+  /** "Step 2 of 2" and the like. */
   step?: ReactNode
   children: ReactNode
   footer?: ReactNode
 }
 
-export function AuthPanel({ title, subtitle, error, step, children, footer }: Props) {
-  // No min-h-screen wrapper here: AuthLayout's <main> already centres inside a
-  // full-height flex box. Nesting a second one made the page 940px tall in an
-  // 860px viewport and scroll for nothing.
+export function AuthPanel({ title, subtitle, tabs, error, step, children, footer }: Props) {
   return (
-    <div className="app-auth__panel p-7 sm:p-9">
-      <header className="app-auth__brand text-left">
-        <div className="auth-brand-row">
-          <div className="auth-brand-mark">
-            <img src="/Logo.png" alt="" className="h-8 w-8 object-contain" />
-          </div>
-          <div className="auth-brand-name">
-            <span className="auth-brand-name__title">ProPackers</span>
-            <span className="auth-brand-name__sub">Warehouse Management</span>
-          </div>
-        </div>
+    <div className="app-auth__panel p-6 sm:p-8">
+      {tabs ? <div className="mb-6">{tabs}</div> : null}
 
-        <h1 className="auth-hero-title mt-7">{title}</h1>
+      <header>
+        <h1 className="auth-hero-title">{title}</h1>
         <p className="auth-hero-subtitle">{subtitle}</p>
       </header>
 

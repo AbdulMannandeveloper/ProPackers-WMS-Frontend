@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { AuthPanel } from '@/features/auth/AuthPanel'
 import { auth as apiAuth } from '@/api'
 
 type PreviewInfo = {
@@ -82,19 +83,15 @@ export default function SetupPasswordPage() {
   }
 
   return (
-    <div className="app-auth">
-      <div className="app-auth__panel p-6 sm:p-7 lg:p-8">
-        <div className="app-auth__brand text-left">
-          <div className="app-auth__brand-mark !mx-0">
-            <img src="/Logo.png" alt="logo" className="h-7 w-7 object-contain" />
-          </div>
-          <h1 className="auth-hero-title mt-4">Set your password</h1>
-          <p className="auth-hero-subtitle">Complete your account setup</p>
-        </div>
-        <div className="auth-note mt-4">
+    <AuthPanel
+      title="Set your password"
+      subtitle="Complete your account setup."
+      error={error || null}
+    >
+      <div className="auth-note">
           This link is temporary and can only be used once to finish your account activation.
         </div>
-        <div className="auth-preview mt-5">
+      <div className="auth-preview mt-5">
           <div className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Invitation details</div>
           {previewLoading ? (
             <div className="text-sm text-slate-500">Loading invitation details…</div>
@@ -126,7 +123,7 @@ export default function SetupPasswordPage() {
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           <div>
             <label className="auth-label">Password</label>
             <input
@@ -155,7 +152,6 @@ export default function SetupPasswordPage() {
             </div>
           ) : null}
 
-          {error ? <div className="auth-alert auth-alert--error">{error}</div> : null}
           {message ? <div className="auth-alert auth-alert--success">{message}</div> : null}
 
           <div className="grid grid-cols-2 gap-3">
@@ -166,8 +162,7 @@ export default function SetupPasswordPage() {
               {loading ? 'Saving…' : 'Set password'}
             </Button>
           </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </AuthPanel>
   )
 }

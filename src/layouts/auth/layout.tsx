@@ -1,54 +1,41 @@
 import type { ReactNode } from 'react'
 
+/**
+ * One centred column: brand, card, footer.
+ *
+ * The dark marketing panel that used to take half the viewport is gone. It
+ * pushed every form into the right-hand strip and said nothing to someone who
+ * had already decided to sign in.
+ *
+ * The brand sits above the card rather than inside it, so all four auth pages
+ * are identified once, in the same place, whatever card follows.
+ */
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="auth-shell min-h-screen bg-slate-50">
-      <div className="grid min-h-screen w-full lg:grid-cols-[48%_52%] xl:grid-cols-[50%_50%] 2xl:grid-cols-[51%_49%]">
-        <aside className="auth-shell__marketing sticky top-0 hidden h-screen flex-col justify-between overflow-y-auto px-8 py-8 text-white lg:flex">
-          <div className="space-y-12">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-blue-900 shadow-lg shadow-black/20">
-                <span className="text-xl font-black tracking-tight">P</span>
-              </div>
-              <div>
-                <div className="text-xl font-semibold leading-none">Propacker</div>
-                <div className="mt-1 text-sm text-white/70">Warehouse Management System</div>
-              </div>
-            </div>
-
-            <div className="max-w-xl space-y-5">
-              <p className="text-4xl font-semibold leading-tight tracking-tight text-white xl:text-5xl">
-                Clear access for every role, with a simple and calm workspace.
-              </p>
-              <p className="max-w-lg text-base leading-7 text-white/75">
-                Admins, employees, and clients all get the right view with a clean sign-in experience and secure OTP flow.
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                'Inventory and warehouse control',
-                'Client service visibility',
-                'Team operations dashboard',
-                'Secure OTP sign-in',
-              ].map((item) => (
-                <div key={item} className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm text-white/80 backdrop-blur">
-                  {item}
-                </div>
-              ))}
-            </div>
+    <main className="auth-stage flex min-h-screen flex-col items-center justify-center px-4 py-10 sm:px-6">
+      {/* max-w keeps the column narrow: a centred card any wider reads as a
+          slab rather than a form. */}
+      <div className="w-full max-w-[27rem]">
+        <header className="auth-masthead">
+          <div className="auth-brand-mark">
+            <img src="/Logo.png" alt="" className="h-9 w-9 object-contain" />
           </div>
-
-          <div className="space-y-3 text-sm text-white/55">
-            <div className="h-px w-full bg-white/10" />
-            <p>Designed to feel straightforward, premium, and easy on the eyes.</p>
+          <div>
+            <div className="auth-masthead__title">ProPackers</div>
+            <div className="auth-masthead__sub">Warehouse Management</div>
           </div>
-        </aside>
+        </header>
 
-        <main className="auth-stage flex min-h-screen items-center justify-center px-4 py-10 sm:px-8 lg:px-10">
-          <div className="w-full max-w-[34rem]">{children}</div>
-        </main>
+        {children}
+
+        <footer className="auth-colophon">
+          <span>© {new Date().getFullYear()} ProPackers UK</span>
+          <span aria-hidden="true">·</span>
+          <a href="mailto:support@nayoram.com" className="auth-link auth-link--quiet">
+            Support
+          </a>
+        </footer>
       </div>
-    </div>
+    </main>
   )
 }
