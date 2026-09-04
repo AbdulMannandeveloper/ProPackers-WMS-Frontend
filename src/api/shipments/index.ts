@@ -89,28 +89,44 @@ export const getAllShipments = (): Promise<Shipment[]> =>
 export const getShipmentsByClientId = (clientId: string): Promise<Shipment[]> =>
   httpClient({ method: 'GET', url: `${BASE}/client/${clientId}` })
 
+/**
+ * The shipment carrying this label, or null.
+ *
+ * Asked before anything is picked. Finding out a label was already used at save
+ * time would mean unpicking a pallet.
+ */
+export const findByReference = async (reference: string): Promise<Shipment | null> => {
+  try {
+    const found = await httpClient<Shipment | Shipment[]>({
+      method: 'GET',
+      url: `${BASE}/field/reference/${encodeURIComponent(reference)}`,
+    })
+    const one = Array.isArray(found) ? found[0] : found
+    return one ?? null
+  } catch (err) {
+    // A 404 is the answer "no such label", not a failure.
+    if ((err as { response?: { status?: number } })?.response?.status === 404) return null
+    throw err
+  }
+}
+
 export const getShipmentById = (id: string): Promise<Shipment> =>
   httpClient({ method: 'GET', url: `${BASE}/field/id/${id}` })
 
+/**
+ * Creates a shipment and dispatches it in one act.
+ *
+ * The client is derived from the goods, the creator from the session, and the
+ * status is decided by the server — none of them are sent. `reference` is the
+ * label scanned off the parcel and is required.
+ */
 export const createShipment = (payload: {
-  employeeId: string
-  clientId: string
-  shipmentType: string
-  packagingType: string
-  courierName: string
-  status?: string
-  shipmentItems?: {
-    productId: string
-    sourceLocationId: string
-    quantity: number
-  }[]
+  reference: string
+  trackingId?: string
+  shipmentItems: { productId: string; sourceLocationId: string; quantity: number }[]
 }): Promise<Shipment> =>
   httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
 
-/**
- * Commercial and identity details. Admin only, and refused once dispatched.
- * trackingId is NOT settable here — it has its own endpoint below.
- */
 export const updateShipment = (
   id: string,
   payload: {
@@ -179,15 +195,27 @@ export const unpickShipmentItem = (id: string): Promise<ShipmentItem> =>
  * and cancel already release reserved stock. The invoice is deliberately NOT
  * changed: the dispatch happened and was charged for.
  */
+/**
+ * Puts some of a dispatched line back on the shelf.
+ *
+ * `chargeReturn` is opt-in and only honoured when the client has an agreed
+ * ITEM_RETURN rate. The shipment's own charge is never rewritten either way —
+ * the fee, when there is one, is a separate line. `returnCharge` on the
+ * response says what was actually billed, or null.
+ */
 export const returnShipmentItem = (
   id: string,
   quantity: number,
-  reason?: string
-): Promise<ShipmentItem> =>
+  options: { reason?: string; chargeReturn?: boolean } = {}
+): Promise<ShipmentItem & { returnCharge?: number | null }> =>
   httpClient({
     method: 'POST',
     url: `/api/shipment-items/${id}/return`,
-    data: { quantity, reason },
+    data: {
+      quantity,
+      reason: options.reason,
+      chargeReturn: options.chargeReturn === true,
+    },
   })
 
 /** Quantity / location / tracking id. Admin only. Status is not settable here. */

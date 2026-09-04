@@ -1,46 +1,28 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router'
 import { useAuthStore } from '@/stores/auth'
 import {
   shipments as shipmentsApi,
-  employees as employeesApi,
-  clients as clientsApi,
   clientServices as clientServicesApi,
 } from '@/api'
 import type { Shipment } from '@/api/shipments'
 
-type EmployeeOption = {
-  id: string
-  firstName: string | null
-  lastName: string | null
-}
 
-type ClientOption = {
-  id: string
-  companyName: string
-}
-import type { ClientServiceRate } from '@/api/clientServices'
 import {
   Button,
   Card,
   CardContent,
   Badge,
   Input,
-  Select,
   Modal,
 } from '@/components/Shared Components'
 import { TrackingChip } from '@/components/TrackingChip'
-import { ProductPicker } from '@/features/shipments/ProductPicker'
 import {
-  basketUnitCount,
-  estimateDispatchCharge,
-  foreignLines,
-  mergeLines,
-  toShipmentItems,
-  type PickLine,
 } from '@/features/shipments/picking'
-import { COURIERS, validateTrackingId, normaliseTrackingId } from '@/lib/couriers'
+import { validateTrackingId, normaliseTrackingId } from '@/lib/couriers'
 
 export default function ShipmentsPage() {
+  const navigate = useNavigate()
   const role = useAuthStore((s) => s.role)
   const isAdmin = role === 'admin'
   const isEmployee = role === 'employee'
@@ -51,10 +33,8 @@ export default function ShipmentsPage() {
   // The lookup shape, not the full Employee: /api/employees/lookup returns id
   // and name only, deliberately, so a dropdown does not carry NI numbers and
   // salaries into the browser.
-  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   // The lookup shape, not the full Client: /api/clients/lookup is what staff
   // are allowed to read, and id + companyName is all this page renders.
-  const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(false)
 
   // Custom Toast Notification State
@@ -72,7 +52,6 @@ export default function ShipmentsPage() {
   }, [toast])
 
   // Modal Toggles
-  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
@@ -84,65 +63,35 @@ export default function ShipmentsPage() {
   // draft quantity.
   const [returnDrafts, setReturnDrafts] = useState<Record<string, string>>({})
   const [returning, setReturning] = useState<string | null>(null)
+  // Whether to charge the return, per line. Never remembered between lines and
+  // never defaulted on — see the note on the checkbox.
+  const [chargeReturn, setChargeReturn] = useState<Record<string, boolean>>({})
+  // The client's agreed per-item return fee, or null when they have none. Only
+  // admins can read the rate card, and only admins can return, so this is never
+  // fetched for an employee.
+  const [returnRate, setReturnRate] = useState<number | null>(null)
 
   const [trackingDraft, setTrackingDraft] = useState('')
   const [savingTracking, setSavingTracking] = useState(false)
 
   // Create Shipment Form State
-  const [formClientId, setFormClientId] = useState('')
-  const [formEmployeeId, setFormEmployeeId] = useState('')
-  const [formShipmentType, setFormShipmentType] = useState('Standard')
-  const [formPackagingType, setFormPackagingType] = useState('Box')
-  const [formCourierName, setFormCourierName] = useState('DPD')
   // Basket lines, one per (product, bin). A product drawn from three bins is
   // three lines, which is exactly what ShipmentItem models server-side.
-  const [formItems, setFormItems] = useState<PickLine[]>([])
   // Billable services. Admin-only: the API refuses them from an employee, matching
   // the admin-only /services endpoints.
-  const [clientRates, setClientRates] = useState<ClientServiceRate[]>([])
-  const [formServices, setFormServices] = useState<{ serviceId: string; quantity: number }[]>([])
-  const [saving, setSaving] = useState(false)
 
   // Load All Core WMS Components
   const loadData = async () => {
     setLoading(true)
     // Records which optional list failed, so the reason reaches the user
     // instead of becoming an empty dropdown.
-    const loadFailures: string[] = []
-    const track = (label: string) => (err: unknown): never[] => {
-      console.error(`Failed to load ${label}:`, err)
-      loadFailures.push(label)
-      return []
-    }
     try {
-      // No product or stock preload: ProductPicker resolves a scanned or typed
-      // code through the barcode lookup and reads that product's bins from the
-      // response, so pulling the whole catalogue and every stock row on page
-      // load was work nobody used.
-      const [shipmentsData, empsData, clientsData] = await Promise.all([
-        shipmentsApi.getAllShipments(),
-        // Lookups, not the full lists. getAllEmployees and getAllClients are
-        // both admin-only, so an employee raising a shipment got a 403 that the
-        // .catch() swallowed — leaving the dropdowns empty and the create dialog
-        // refusing to open with "Need registered clients and employees", which
-        // is a nonsense message when both plainly exist.
-        //
-        // Failures are recorded rather than silently flattened to []: that habit
-        // is what turned one 403 into two separate bug reports.
-        employeesApi.getEmployeeLookup().catch(track('operators')),
-        clientsApi.getClientLookup().catch(track('clients')),
-      ])
-
-      if (loadFailures.length > 0) {
-        showToast(
-          `Could not load ${loadFailures.join(' or ')}. Some options will be missing.`,
-          'error'
-        )
-      }
+      // Just the shipments. The operator and client dropdowns went with the
+      // create form — the client is derived from the goods now, and the
+      // creator is whoever is signed in — so there is nothing else to preload.
+      const shipmentsData = await shipmentsApi.getAllShipments()
 
       setShipments(shipmentsData || [])
-      setEmployees(empsData || [])
-      setClients(clientsData || [])
     } catch (err: any) {
       showToast(err?.response?.data?.error || err?.message || 'Failed to load shipments metadata.', 'error')
     } finally {
@@ -154,136 +103,27 @@ export default function ShipmentsPage() {
     void loadData()
   }, [])
 
-  // The rates agreed with the selected client. Only these can be billed, so the
-  // picker offers exactly what the server will accept.
-  useEffect(() => {
-    if (!isAdmin || !formClientId) {
-      setClientRates([])
-      return
-    }
-    let cancelled = false
-    clientServicesApi
-      .getClientServicesByClientId(formClientId)
-      .then((rows) => { if (!cancelled) setClientRates(rows) })
-      .catch(() => { if (!cancelled) setClientRates([]) })
-    return () => { cancelled = true }
-  }, [formClientId, isAdmin])
-
-  // Changing client invalidates any services already chosen at the old client's rates.
-  useEffect(() => {
-    setFormServices([])
-  }, [formClientId])
-
-  const handleAddServiceRow = () => {
-    const unused = clientRates.filter(
-      (r) => !formServices.some((s) => s.serviceId === r.serviceId)
-    )
-    if (unused.length === 0) {
-      showToast('No further services are set up for this client.', 'error')
-      return
-    }
-    setFormServices((prev) => [...prev, { serviceId: unused[0].serviceId, quantity: 1 }])
-  }
-
-  const handleRemoveServiceRow = (idx: number) => {
-    setFormServices((prev) => prev.filter((_, i) => i !== idx))
-  }
-
-  const handleServiceRowChange = (idx: number, field: 'serviceId' | 'quantity', value: any) => {
-    setFormServices((prev) =>
-      prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
-    )
-  }
-
-  const rateFor = (serviceId: string) =>
-    Number(clientRates.find((r) => r.serviceId === serviceId)?.chargedPrice ?? 0)
-
-  // Open Create Modal & Initialize
-  const handleOpenCreateModal = () => {
-    if (clients.length === 0 || employees.length === 0) {
-      showToast('Need registered clients and employees to configure outbounds.', 'error')
-      return
-    }
-    setFormClientId(clients[0]?.id || '')
-    setFormEmployeeId(employees[0]?.id || '')
-    setFormShipmentType('Standard')
-    setFormPackagingType('Box')
-    setFormCourierName('DPD')
-    setFormItems([])
-    setFormServices([])
-    setCreateModalOpen(true)
-  }
-
-  // Form Item Row Handlers
-  /** Adds picked lines, merging a repeat of the same product and bin. */
-  const handleAddPicked = (lines: PickLine[]) => {
-    setFormItems((prev) => mergeLines(prev, lines))
-  }
-
-  const handleRemoveItemRow = (idx: number) => {
-    setFormItems((prev) => prev.filter((_, i) => i !== idx))
-  }
-
-  /**
-   * The client's agreed per-item dispatch rate, or null if they have none.
-   *
-   * Read from the rate card, matching what the server charges. Only admins can
-   * read /api/client-services, so for an employee this is null and no estimate
-   * is shown — which is honest: an employee genuinely does not know the rate.
-   */
-  const dispatchRate = (() => {
-    const row = clientRates.find((r) => r.service?.code === 'SHIPMENT_DISPATCH')
-    return row ? Number(row.chargedPrice) : null
-  })()
 
   // Save Shipment
-  const handleSaveShipment = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (formItems.length === 0) {
-      showToast('Please add at least one product item to this shipment.', 'error')
-      return
-    }
 
-    // The picker already refuses over-picking a bin and a foreign product, but
-    // the client can be changed after items are added — so re-check here rather
-    // than trusting a basket assembled under a different client.
-    const foreign = foreignLines(formItems, formClientId)
-    if (foreign.length > 0) {
-      showToast(
-        `${foreign[0].productName} belongs to another client. Remove it or change the client.`,
-        'error'
-      )
-      return
-    }
-
-    setSaving(true)
+  /**
+   * The client's agreed return fee, if they have one.
+   *
+   * Read when the detail opens rather than up front: it is only ever needed
+   * here, and only for an admin.
+   */
+  const loadReturnRate = async (clientId: string) => {
+    setReturnRate(null)
+    if (!isAdmin || !clientId) return
     try {
-      const payload = {
-        clientId: formClientId,
-        employeeId: formEmployeeId,
-        shipmentType: formShipmentType,
-        packagingType: formPackagingType,
-        courierName: formCourierName,
-        status: 'PENDING',
-        shipmentItems: toShipmentItems(formItems),
-        ...(formServices.length > 0
-          ? {
-              shipmentServices: formServices.map((s) => ({
-                serviceId: s.serviceId,
-                quantity: s.quantity,
-              })),
-            }
-          : {}),
-      }
-
-      await shipmentsApi.createShipment(payload)
-      showToast('Outbound shipment registered & inventory reserved.')
-      setCreateModalOpen(false)
-      await loadData()
-    } catch (err: any) {
-      showToast(err?.response?.data?.error || err?.message || 'Failed to save shipment.', 'error')
-    } finally {
-      setSaving(false)
+      const rows = await clientServicesApi.getClientServicesByClientId(clientId)
+      const row = (Array.isArray(rows) ? rows : []).find(
+        (r: { service?: { code?: string | null } }) => r.service?.code === 'ITEM_RETURN'
+      )
+      setReturnRate(row ? Number((row as { chargedPrice: number }).chargedPrice) : null)
+    } catch {
+      // No rate shown means no charge offered, which is the safe direction.
+      setReturnRate(null)
     }
   }
 
@@ -291,6 +131,8 @@ export default function ShipmentsPage() {
   const handleOpenDetails = (shipment: Shipment) => {
     setSelectedShipment(shipment)
     setTrackingDraft(shipment.trackingId || '')
+    setChargeReturn({})
+    void loadReturnRate(shipment.clientId)
     setDetailsModalOpen(true)
   }
 
@@ -322,9 +164,19 @@ export default function ShipmentsPage() {
 
     setReturning(itemId)
     try {
-      await shipmentsApi.returnShipmentItem(itemId, quantity)
-      showToast(`${quantity} returned to stock. The invoice is unchanged.`)
+      const charge = chargeReturn[itemId] === true
+      const result = await shipmentsApi.returnShipmentItem(itemId, quantity, { chargeReturn: charge })
+
+      // Says which of the two things happened, rather than a generic success:
+      // whether a client was billed is not something to leave ambiguous.
+      const billed = (result as { returnCharge?: number | null })?.returnCharge
+      showToast(
+        billed
+          ? `${quantity} returned to stock. £${billed.toFixed(2)} return fee added — the shipment's own charge is unchanged.`
+          : `${quantity} returned to stock. Nothing was charged.`
+      )
       setReturnDrafts((prev) => ({ ...prev, [itemId]: '' }))
+      setChargeReturn((prev) => ({ ...prev, [itemId]: false }))
 
       const refreshed = await shipmentsApi.getShipmentById(selectedShipment!.id)
       setSelectedShipment(refreshed)
@@ -526,7 +378,7 @@ export default function ShipmentsPage() {
           </p>
         </div>
         {isStaff && (
-          <Button onClick={handleOpenCreateModal}>
+          <Button onClick={() => navigate('/dispatch')}>
             Register Outbound Order
           </Button>
         )}
@@ -658,253 +510,6 @@ export default function ShipmentsPage() {
       </Card>
 
       {/* ────────────────────────────────── MODAL: CREATE OUTBOUND ORDER ────────────────────────────────── */}
-      <Modal
-        open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        title="Configure Outbound Shipment"
-        description="Specify Client, assigned employee, courier details, and add products from locations with active stock."
-        size="lg"
-        contentClassName="space-y-4"
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setCreateModalOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="submit" form="create-shipment-form" loading={saving}>
-              {saving ? 'Creating Order...' : 'Create Shipment'}
-            </Button>
-          </div>
-        }
-      >
-        <form id="create-shipment-form" onSubmit={handleSaveShipment} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Client Owner *
-              </label>
-              <Select value={formClientId} onChange={(e) => setFormClientId(e.target.value)} required>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.companyName}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Assign Operator *
-              </label>
-              <Select value={formEmployeeId} onChange={(e) => setFormEmployeeId(e.target.value)} required>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {[emp.firstName, emp.lastName].filter(Boolean).join(' ') || 'Unnamed'}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Shipment Type *
-              </label>
-              <Select value={formShipmentType} onChange={(e) => setFormShipmentType(e.target.value)} required>
-                <option value="Standard">Standard Outbound</option>
-                <option value="Express">Express Courier</option>
-                <option value="Next Day">Next Day Delivery</option>
-                <option value="International">International Shipping</option>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Packaging Container *
-              </label>
-              <Select value={formPackagingType} onChange={(e) => setFormPackagingType(e.target.value)} required>
-                <option value="Box">Corrugated Box</option>
-                <option value="Pallet">Shrink Pallet</option>
-                <option value="Crate">Wooden Crate</option>
-                <option value="Envelope">Bubble Envelope</option>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Courier Carrier *
-              </label>
-              <Select value={formCourierName} onChange={(e) => setFormCourierName(e.target.value)} required>
-                {COURIERS.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-              Items to pick
-            </h3>
-
-            <ProductPicker
-              clientId={formClientId}
-              onAdd={handleAddPicked}
-              onError={(m) => showToast(m, 'error')}
-            />
-
-            {formItems.length === 0 ? (
-              <div className="text-center py-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 text-sm">
-                Nothing picked yet. Scan or search for a product above.
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {formItems.map((item, idx) => (
-                  <div
-                    key={`${item.productId}-${item.locationId}`}
-                    className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">
-                        {item.productName}
-                      </div>
-                      <div className="text-xs text-slate-400 font-mono truncate">
-                        {item.skuCode} · from {item.locationName}
-                      </div>
-                    </div>
-                    <Badge variant="secondary">{item.quantity}</Badge>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      onClick={() => handleRemoveItemRow(idx)}
-                      className="px-3"
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {formItems.length > 0 && (
-              <div className="flex items-center justify-between gap-2 flex-wrap rounded-xl bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm">
-                <span className="text-slate-500">
-                  <strong className="text-slate-800 dark:text-slate-200">
-                    {basketUnitCount(formItems)}
-                  </strong>{' '}
-                  item{basketUnitCount(formItems) === 1 ? '' : 's'} across{' '}
-                  {formItems.length} location{formItems.length === 1 ? '' : 's'}
-                </span>
-                {/* Per item, matching the server. Absent rather than zero when
-                    the rate is unknown: "not charged" and "charged nothing"
-                    read differently. */}
-                {dispatchRate !== null && (
-                  <span className="text-slate-500">
-                    Dispatch charge{' '}
-                    <strong className="text-slate-800 dark:text-slate-200">
-                      £{estimateDispatchCharge(formItems, dispatchRate)?.toFixed(2)}
-                    </strong>{' '}
-                    <span className="text-xs text-slate-400">
-                      ({basketUnitCount(formItems)} × £{dispatchRate.toFixed(2)})
-                    </span>
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Billable services. Admin-only: the API refuses them from an employee,
-              matching the admin-only /services endpoints. Only rates already
-              agreed with this client are offered, because those are the only ones
-              the server will accept. */}
-          {isAdmin && (
-            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  Billable Services
-                </h3>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={handleAddServiceRow}
-                  disabled={clientRates.length === 0}
-                >
-                  + Add Service
-                </Button>
-              </div>
-
-              {clientRates.length === 0 ? (
-                <div className="text-center py-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 text-sm">
-                  No agreed rates for this client. Set them up under Clients &rarr; Services first.
-                </div>
-              ) : formServices.length === 0 ? (
-                <div className="text-center py-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 text-sm">
-                  No services added. These are billed to the client on dispatch.
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                  {formServices.map((row, idx) => {
-                    const rate = rateFor(row.serviceId)
-                    return (
-                      <div
-                        key={`svc-${idx}`}
-                        className="grid grid-cols-12 gap-2 items-end bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800"
-                      >
-                        <div className="col-span-6">
-                          <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
-                            Service
-                          </label>
-                          <Select
-                            value={row.serviceId}
-                            onChange={(e) => handleServiceRowChange(idx, 'serviceId', e.target.value)}
-                          >
-                            {clientRates.map((r) => (
-                              <option key={r.id} value={r.serviceId}>
-                                {r.service?.description ?? r.serviceId}
-                              </option>
-                            ))}
-                          </Select>
-                        </div>
-                        <div className="col-span-2">
-                          <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
-                            Qty
-                          </label>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={row.quantity}
-                            onChange={(e) =>
-                              handleServiceRowChange(idx, 'quantity', Number(e.target.value))
-                            }
-                          />
-                        </div>
-                        <div className="col-span-3">
-                          <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
-                            Charge
-                          </label>
-                          <div className="h-9 flex items-center text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
-                            &pound;{(rate * (row.quantity || 0)).toFixed(2)}
-                          </div>
-                        </div>
-                        <div className="col-span-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleRemoveServiceRow(idx)}
-                          >
-                            &times;
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </form>
-      </Modal>
 
       {/* ────────────────────────────── MODAL: SHIPMENT CHECKLIST & DISPATCH ────────────────────────────── */}
       <Modal
@@ -1142,7 +747,28 @@ export default function ShipmentsPage() {
                                   )
                                 }
                                 return (
-                                  <div className="flex items-center justify-end gap-2">
+                                  <div className="flex flex-col items-end gap-2">
+                                    {/* Only when a fee has been agreed, and never
+                                        ticked by default: forgetting to untick
+                                        would bill for a return meant to be
+                                        absorbed. */}
+                                    {returnRate !== null ? (
+                                      <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-slate-600">
+                                        <input
+                                          type="checkbox"
+                                          className="size-4 rounded border-slate-300"
+                                          checked={chargeReturn[item.id] === true}
+                                          onChange={(e) =>
+                                            setChargeReturn((prev) => ({
+                                              ...prev,
+                                              [item.id]: e.target.checked,
+                                            }))
+                                          }
+                                        />
+                                        Charge £{returnRate.toFixed(2)} per item
+                                      </label>
+                                    ) : null}
+                                    <div className="flex items-center justify-end gap-2">
                                     <div className="w-20">
                                       <Input
                                         type="number"
@@ -1162,12 +788,13 @@ export default function ShipmentsPage() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      disabled={returning === item.id}
+                                      loading={returning === item.id}
                                       onClick={() => handleReturnItem(item.id, outstanding)}
-                                      title={`Puts stock back in ${item.sourceLocation?.locationName ?? 'its original location'}. The invoice is not changed.`}
+                                      title={`Puts stock back in ${item.sourceLocation?.locationName ?? 'its original location'}. The shipment's own charge is never changed.`}
                                     >
                                       {returning === item.id ? 'Returning…' : 'Return'}
                                     </Button>
+                                    </div>
                                   </div>
                                 )
                               })()}

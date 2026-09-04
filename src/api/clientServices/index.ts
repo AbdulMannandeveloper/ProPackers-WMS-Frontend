@@ -50,6 +50,25 @@ export const updateClientService = (
 ) =>
   httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
 
+/**
+ * Charges a quantity of a service the client has already agreed a rate for onto
+ * whichever invoice period is open.
+ *
+ * Raised from the Clients screen as a deliberate act — it was a column on the
+ * rate card before, which made it too easy to fire by accident.
+ */
+export const chargeServiceToClient = (payload: {
+  clientId: string
+  clientServiceId: string
+  quantity: number
+  description?: string
+}) =>
+  httpClient({
+    method: 'POST',
+    url: '/api/monthly-invoices/charge-service',
+    data: payload,
+  })
+
 export const deleteClientService = (id: string) => httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
 
-export default { addClientService, getAllClientServices, getClientServicesByClientId, getClientServicesByServiceId, updateClientService, deleteClientService }
+export default { chargeServiceToClient, addClientService, getAllClientServices, getClientServicesByClientId, getClientServicesByServiceId, updateClientService, deleteClientService }
