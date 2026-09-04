@@ -1,12 +1,13 @@
-import { useMemo, useRef, useState } from 'react'
-import { PackagePlus, ScanLine, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Camera, Check, Minus, Plus, Volume2, VolumeX, X } from 'lucide-react'
 
 import { inventory as inventoryApi, products as productsApi } from '@/api'
 import type { Product } from '@/api/products'
 import { Button, Input, Select, Spinner } from '@/components/Shared Components'
-import { BarcodeScanner } from '@/components/scanner'
+import { BarcodeScanner, createWedgeListener } from '@/components/scanner'
 import { useDefaultSelection } from '@/hooks/useDefaultSelection'
 import { errorMessage } from '@/lib/errors'
+import { isMuted, setMuted, signal } from '@/lib/feedback'
 
 import {
   addNewProductLine,
@@ -25,14 +26,21 @@ import {
 } from './receiving'
 
 /**
- * Goods-in for a whole delivery.
+ * Goods-in, sized for someone holding a carton.
  *
- * The old flow made an operator go scan → modal → location → quantity → save →
- * close → "scan next" for every carton on the pallet. This one asks for the bin
- * once and then gets out of the way: keep scanning, watch the list build, fix
- * anything at the end, commit once.
+ * Three things drive the layout, all of them from how a bench actually runs:
  *
- * Nothing is written until Check in. That is what lets a mis-scan be deleted
+ * 1. The gun is the main input. A USB or Bluetooth scanner in HID mode types
+ *    the code and presses Enter, so this listens on the document and nothing
+ *    needs focus. Typing and the camera are the other two ways in, and all
+ *    three land in the same place.
+ * 2. The eyes are on the carton, not the screen. Every scan beeps and buzzes,
+ *    and the last one is the biggest thing on the page, so confirming it takes
+ *    a glance rather than a read.
+ * 3. The hands may be gloved. Steppers instead of a number spinner, labelled
+ *    buttons instead of icons, generous rows.
+ *
+ * Nothing is written until Check in, which is what lets a mis-scan be deleted
  * rather than reversed.
  */
 
@@ -46,12 +54,11 @@ type LocationOption = {
 type ClientOption = { id: string; companyName: string }
 
 type Props = {
-  open: boolean
-  onClose: () => void
   locations: LocationOption[]
   clients: ClientOption[]
   /** Used to catch a SKU the client already has before committing. */
   catalogue: Product[]
+  onDone: () => void
   onReceived: (summary: { linesReceived: number; productsCreated: number }) => void
 }
 
@@ -64,12 +71,13 @@ const EMPTY_DRAFT = (clientId: string, barcode: string): NewProductDraft => ({
   barcode: barcode || null,
 })
 
+type LastScan = { name: string; sku: string; quantity: number; tone: 'ok' | 'attention' }
+
 export function ReceivingSession({
-  open,
-  onClose,
   locations,
   clients,
   catalogue,
+  onDone,
   onReceived,
 }: Props) {
   const [locationId, setLocationId] = useState(locations[0]?.id ?? '')
@@ -79,19 +87,18 @@ export function ReceivingSession({
   const [looking, setLooking] = useState(false)
   const [error, setError] = useState('')
   const [committing, setCommitting] = useState(false)
+  const [muted, setMutedState] = useState(isMuted)
+  const [lastScan, setLastScan] = useState<LastScan | null>(null)
 
-  // The unknown-code form. Held here rather than in a modal so scanning can
-  // carry on around it.
   const [draft, setDraft] = useState<NewProductDraft | null>(null)
   const [draftExtras, setDraftExtras] = useState(false)
   const [draftError, setDraftError] = useState('')
 
-  // Remembered across the session: a delivery is usually for one client.
   const lastClientId = useRef<string>('')
 
-  // Same trap as the product form: a select whose value matches no option
-  // still renders the first one, so an empty state behind a filled-looking
-  // dropdown gets the delivery refused with nothing on screen to explain it.
+  // Same trap as the product form: a select whose value matches no option still
+  // renders the first one, so an empty state behind a filled-looking dropdown
+  // gets the delivery refused with nothing on screen to explain it.
   useDefaultSelection(locationId, setLocationId, locations)
 
   const summary = useMemo(() => totals(lines), [lines])
@@ -100,10 +107,11 @@ export function ReceivingSession({
     [lines, locationId],
   )
 
-  /**
-   * One code in, from the camera or the box. Known products fold straight into
-   * the basket; unknown ones open the capture form.
-   */
+  // handleCode closes over `lines` and `draft`, and the wedge listener is
+  // attached once. A ref keeps the listener calling the current version rather
+  // than the one from first render.
+  const handleCodeRef = useRef<(code: string) => void>(() => {})
+
   const handleCode = async (raw: string) => {
     const code = raw.trim()
     if (!code || looking) return
@@ -111,13 +119,21 @@ export function ReceivingSession({
     setError('')
     setManual('')
 
-    // Already on the delivery? Count it without asking the server again — the
-    // second scan of a carton should be instant.
+    // Already on the delivery: count it without another round trip. The second
+    // scan of a carton has to feel instant.
     const known = findLineByCode(lines, code)
     if (known) {
+      const next = known.quantity + 1
       setLines((prev) =>
-        prev.map((l) => (l.key === known.key ? { ...l, quantity: l.quantity + 1 } : l)),
+        prev.map((l) => (l.key === known.key ? { ...l, quantity: next } : l)),
       )
+      setLastScan({
+        name: isNewLine(known) ? known.draft.productName : known.productName,
+        sku: isNewLine(known) ? known.draft.skuCode : known.skuCode,
+        quantity: next,
+        tone: 'ok',
+      })
+      signal('accepted')
       return
     }
 
@@ -126,33 +142,71 @@ export function ReceivingSession({
       const { matches } = await productsApi.lookupByCode(code)
 
       if (matches.length === 1) {
-        setLines((prev) => addScannedProduct(prev, matches[0]))
-        lastClientId.current = matches[0].clientId || lastClientId.current
+        const product = matches[0]
+        setLines((prev) => addScannedProduct(prev, product))
+        lastClientId.current = product.clientId || lastClientId.current
+        setLastScan({
+          name: product.productName,
+          sku: product.skuCode,
+          quantity: 1,
+          tone: 'ok',
+        })
+        signal('accepted')
         return
       }
 
       if (matches.length > 1) {
-        // SKUs are unique per client, so the same code can belong to two.
-        // Guessing would put the stock on the wrong client's inventory.
+        // SKUs are unique per client, not globally. Guessing would put the
+        // stock on the wrong client's inventory and eventually their invoice.
         setError(
           `${code} matches ${matches.length} products across different clients. Add it from the Products tab instead.`,
         )
+        signal('refused')
         return
       }
 
-      setDraft(EMPTY_DRAFT(lastClientId.current || clients[0]?.id || '', code))
-      setDraftError('')
+      openDraftFor(code)
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 404) {
-        setDraft(EMPTY_DRAFT(lastClientId.current || clients[0]?.id || '', code))
-        setDraftError('')
+        openDraftFor(code)
       } else {
         setError(errorMessage(err, 'Could not look that code up.'))
+        signal('refused')
       }
     } finally {
       setLooking(false)
     }
+  }
+
+  const openDraftFor = (code: string) => {
+    setDraft(EMPTY_DRAFT(lastClientId.current || clients[0]?.id || '', code))
+    setDraftError('')
+    setLastScan({ name: 'Not in the catalogue', sku: code, quantity: 0, tone: 'attention' })
+    signal('attention')
+  }
+
+  handleCodeRef.current = (code: string) => void handleCode(code)
+
+  // The gun. Paused while the new-product form is open, so typing a SKU into it
+  // is never mistaken for a scan.
+  useEffect(() => {
+    if (draft) return
+    return createWedgeListener({ onScan: (value) => handleCodeRef.current(value) })
+  }, [draft])
+
+  const toggleMute = () => {
+    const next = !muted
+    setMuted(next)
+    setMutedState(next)
+  }
+
+  const bump = (key: string, by: number) => {
+    setLines((prev) =>
+      prev.map((l) =>
+        l.key === key ? { ...l, quantity: Math.max(1, l.quantity + by) } : l,
+      ),
+    )
   }
 
   const commitDraft = () => {
@@ -160,17 +214,26 @@ export function ReceivingSession({
 
     if (!draft.clientId || !draft.skuCode.trim() || !draft.productName.trim()) {
       setDraftError('Client, SKU and name are needed before this can be received.')
+      signal('refused')
       return
     }
 
     const clash = findSkuClash(lines, catalogue, draft)
     if (clash) {
       setDraftError(clash)
+      signal('refused')
       return
     }
 
     setLines((prev) => addNewProductLine(prev, draft))
     lastClientId.current = draft.clientId
+    setLastScan({
+      name: draft.productName,
+      sku: draft.skuCode,
+      quantity: 1,
+      tone: 'ok',
+    })
+    signal('accepted')
     setDraft(null)
     setDraftExtras(false)
     setDraftError('')
@@ -186,20 +249,158 @@ export function ReceivingSession({
         toBatchPayload(lines, locationId || undefined),
       )
       setLines([])
+      setLastScan(null)
       onReceived(result)
     } catch (err) {
       setError(errorMessage(err, 'Could not check this delivery in.'))
+      signal('refused')
     } finally {
       setCommitting(false)
     }
   }
 
-  if (!open) return null
+  /* ── The new-product step takes the screen, rather than pushing the list
+        around while somebody is mid-flow. ─────────────────────────────────── */
+  if (draft) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-6 p-6">
+        <div className="rounded-3xl border-2 border-amber-300 bg-amber-50 p-6">
+          <p className="text-sm font-semibold uppercase tracking-wider text-amber-800">
+            Not in the catalogue
+          </p>
+          <p className="mt-1 font-mono text-2xl font-bold text-slate-900">
+            {draft.barcode || 'New product'}
+          </p>
+          <p className="mt-2 text-base text-slate-700">
+            Tell us what it is, and it will be created when the delivery is checked in.
+          </p>
+        </div>
 
+        <div className="space-y-5">
+          <div>
+            <label htmlFor="draft-client" className="mb-2 block text-sm font-semibold text-slate-700">
+              Client
+            </label>
+            <Select
+              id="draft-client"
+              className="h-14 text-base"
+              value={draft.clientId}
+              onChange={(e) => setDraft({ ...draft, clientId: e.target.value })}
+            >
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.companyName}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <label htmlFor="draft-sku" className="mb-2 block text-sm font-semibold text-slate-700">
+              SKU
+            </label>
+            <Input
+              id="draft-sku"
+              className="h-14 text-base"
+              value={draft.skuCode}
+              onChange={(e) => setDraft({ ...draft, skuCode: e.target.value })}
+              placeholder="PRO-PK-T-BLUE"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label htmlFor="draft-name" className="mb-2 block text-sm font-semibold text-slate-700">
+              Name
+            </label>
+            <Input
+              id="draft-name"
+              className="h-14 text-base"
+              value={draft.productName}
+              onChange={(e) => setDraft({ ...draft, productName: e.target.value })}
+              placeholder="Polyester tape, blue"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setDraftExtras((v) => !v)}
+            className="text-sm font-semibold text-cyan-700 hover:underline"
+          >
+            {draftExtras ? 'Fewer details' : 'More details (colour, size, weight)'}
+          </button>
+
+          {draftExtras ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                aria-label="Colour"
+                className="h-14 text-base"
+                placeholder="Colour"
+                value={draft.colour ?? ''}
+                onChange={(e) => setDraft({ ...draft, colour: e.target.value })}
+              />
+              <Input
+                aria-label="Size"
+                className="h-14 text-base"
+                placeholder="Size"
+                value={draft.size ?? ''}
+                onChange={(e) => setDraft({ ...draft, size: e.target.value })}
+              />
+              <Input
+                aria-label="Weight in kilograms"
+                className="h-14 text-base"
+                type="number"
+                step="0.001"
+                placeholder="Weight (kg)"
+                value={draft.weight ?? ''}
+                onChange={(e) =>
+                  setDraft({ ...draft, weight: e.target.value ? Number(e.target.value) : null })
+                }
+              />
+              <Input
+                aria-label="Low stock threshold"
+                className="h-14 text-base"
+                type="number"
+                min="0"
+                placeholder="Threshold"
+                value={draft.thresholdLimit ?? ''}
+                onChange={(e) => setDraft({ ...draft, thresholdLimit: Number(e.target.value) || 0 })}
+              />
+            </div>
+          ) : null}
+
+          {draftError ? (
+            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-base text-rose-700" role="alert">
+              {draftError}
+            </p>
+          ) : null}
+
+          <div className="flex gap-3">
+            <Button className="h-14 flex-1 text-base" onClick={commitDraft}>
+              <Check size={20} className="mr-2" />
+              Add and keep scanning
+            </Button>
+            <Button
+              variant="outline"
+              className="h-14 px-6 text-base"
+              onClick={() => {
+                setDraft(null)
+                setLastScan(null)
+              }}
+            >
+              Skip
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  /* ── The bench ────────────────────────────────────────────────────────── */
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-[14rem] flex-1">
+    <div className="flex min-h-screen flex-col">
+      <header className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-white px-5 py-4">
+        <div className="min-w-[16rem] flex-1">
           <label
             htmlFor="receiving-location"
             className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500"
@@ -208,6 +409,7 @@ export function ReceivingSession({
           </label>
           <Select
             id="receiving-location"
+            className="h-12 text-base font-semibold"
             value={locationId}
             onChange={(e) => setLocationId(e.target.value)}
             placeholder={locations.length ? undefined : 'No locations available'}
@@ -220,284 +422,213 @@ export function ReceivingSession({
           </Select>
         </div>
 
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setScannerOpen(true)}>
-            <ScanLine size={16} className="mr-1" />
-            Scan
-          </Button>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      </div>
+        <button
+          type="button"
+          onClick={toggleMute}
+          aria-label={muted ? 'Turn scan sounds on' : 'Turn scan sounds off'}
+          aria-pressed={muted}
+          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
+        >
+          {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+        </button>
 
-      {/* Typed entry sits beside the scanner, not behind it: a damaged label is
-          ordinary, and the lookup takes a SKU as readily as a barcode. */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          void handleCode(manual)
-        }}
-        className="flex gap-2"
-      >
-        <Input
-          value={manual}
-          onChange={(e) => setManual(e.target.value)}
-          placeholder="Type a barcode or SKU, then Enter"
-          aria-label="Barcode or SKU"
-          loading={looking}
-          autoFocus
-        />
-        <Button type="submit" variant="secondary" disabled={!manual.trim() || looking}>
-          Add
-        </Button>
-      </form>
+        <button
+          type="button"
+          onClick={onDone}
+          aria-label="Close receiving"
+          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
+        >
+          <X size={22} />
+        </button>
+      </header>
 
-      {error ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
-          {error}
-        </div>
-      ) : null}
-
-      {/* An unknown code, captured where it was scanned. */}
-      {draft ? (
-        <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-800">New product</p>
-              <p className="text-xs text-slate-600">
-                Nothing matched{' '}
-                <span className="font-mono">{draft.barcode || 'that code'}</span>.
-              </p>
+      <div className="flex-1 space-y-5 p-5">
+        {/* What just happened, as the largest thing on the page. */}
+        <div
+          className={`rounded-3xl border-2 p-6 transition-colors ${
+            lastScan?.tone === 'attention'
+              ? 'border-amber-300 bg-amber-50'
+              : lastScan
+                ? 'border-emerald-300 bg-emerald-50'
+                : 'border-dashed border-slate-200 bg-slate-50'
+          }`}
+          aria-live="polite"
+        >
+          {lastScan ? (
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="truncate text-3xl font-bold tracking-tight text-slate-900">
+                  {lastScan.name}
+                </p>
+                <p className="mt-1 font-mono text-base text-slate-600">{lastScan.sku}</p>
+              </div>
+              {lastScan.quantity > 0 ? (
+                <p className="shrink-0 text-5xl font-black tabular-nums text-slate-900">
+                  ×{lastScan.quantity}
+                </p>
+              ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => setDraft(null)}
-              aria-label="Discard this new product"
-              className="text-slate-400 hover:text-slate-600"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label htmlFor="draft-client" className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Client
-              </label>
-              <Select
-                id="draft-client"
-                value={draft.clientId}
-                onChange={(e) => setDraft({ ...draft, clientId: e.target.value })}
-              >
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.companyName}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label htmlFor="draft-sku" className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                SKU
-              </label>
-              <Input
-                id="draft-sku"
-                value={draft.skuCode}
-                onChange={(e) => setDraft({ ...draft, skuCode: e.target.value })}
-                placeholder="PRO-PK-T-BLUE"
-              />
-            </div>
-            <div>
-              <label htmlFor="draft-name" className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Name
-              </label>
-              <Input
-                id="draft-name"
-                value={draft.productName}
-                onChange={(e) => setDraft({ ...draft, productName: e.target.value })}
-                placeholder="Polyester tape, blue"
-              />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setDraftExtras((v) => !v)}
-            className="text-xs font-medium text-cyan-700 hover:underline"
-          >
-            {draftExtras ? 'Fewer details' : 'More details (colour, size, weight)'}
-          </button>
-
-          {draftExtras ? (
-            <div className="grid gap-3 sm:grid-cols-4">
-              <Input
-                aria-label="Colour"
-                placeholder="Colour"
-                value={draft.colour ?? ''}
-                onChange={(e) => setDraft({ ...draft, colour: e.target.value })}
-              />
-              <Input
-                aria-label="Size"
-                placeholder="Size"
-                value={draft.size ?? ''}
-                onChange={(e) => setDraft({ ...draft, size: e.target.value })}
-              />
-              <Input
-                aria-label="Weight in kilograms"
-                type="number"
-                step="0.001"
-                placeholder="Weight (kg)"
-                value={draft.weight ?? ''}
-                onChange={(e) =>
-                  setDraft({ ...draft, weight: e.target.value ? Number(e.target.value) : null })
-                }
-              />
-              <Input
-                aria-label="Low stock threshold"
-                type="number"
-                min="0"
-                placeholder="Threshold"
-                value={draft.thresholdLimit ?? ''}
-                onChange={(e) =>
-                  setDraft({ ...draft, thresholdLimit: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
-          ) : null}
-
-          {draftError ? (
-            <p className="text-sm text-rose-700" role="alert">
-              {draftError}
+          ) : (
+            <p className="text-center text-lg text-slate-400">
+              Scan a barcode to begin. Scanning the same item again adds one more.
             </p>
-          ) : null}
+          )}
+        </div>
 
-          <Button onClick={commitDraft}>
-            <PackagePlus size={16} className="mr-1" />
-            Add and keep scanning
+        {/* Typing and the camera, for a damaged label or a tablet. The gun
+            needs nothing here — it is heard wherever the cursor is. */}
+        <div className="flex flex-wrap gap-3">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              void handleCode(manual)
+            }}
+            className="flex min-w-[18rem] flex-1 gap-3"
+          >
+            <Input
+              value={manual}
+              onChange={(e) => setManual(e.target.value)}
+              placeholder="Type a barcode or SKU"
+              aria-label="Barcode or SKU"
+              className="h-14 text-base"
+              loading={looking}
+            />
+            <Button type="submit" variant="secondary" className="h-14 px-6 text-base" disabled={!manual.trim() || looking}>
+              Add
+            </Button>
+          </form>
+
+          <Button
+            variant="outline"
+            className="h-14 px-6 text-base"
+            onClick={() => setScannerOpen(true)}
+          >
+            <Camera size={20} className="mr-2" />
+            Camera
           </Button>
         </div>
-      ) : null}
 
-      {/* The delivery so far. */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200">
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            This delivery
+        {error ? (
+          <div className="rounded-2xl border-2 border-rose-200 bg-rose-50 px-4 py-3 text-base text-rose-700" role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        {/* Newest first: what just happened sits next to the card above it, not
+            under nine earlier lines. */}
+        <div className="space-y-3">
+          {[...lines].reverse().map((line) => {
+            const name = isNewLine(line) ? line.draft.productName : line.productName
+            const sku = isNewLine(line) ? line.draft.skuCode : line.skuCode
+
+            return (
+              <div
+                key={line.key}
+                className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4"
+              >
+                <div className="min-w-[12rem] flex-1">
+                  <p className="text-lg font-semibold text-slate-900">
+                    {name}
+                    {isNewLine(line) ? (
+                      <span className="ml-2 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-amber-800">
+                        New
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="font-mono text-sm text-slate-500">{sku}</p>
+                </div>
+
+                {/* Steppers, not a spinner: a number input's arrows are far too
+                    small for a gloved hand. */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => bump(line.key, -1)}
+                    aria-label={`One fewer ${name}`}
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100"
+                  >
+                    <Minus size={20} />
+                  </button>
+                  <Input
+                    type="number"
+                    min="1"
+                    className="h-12 w-20 text-center text-lg font-bold"
+                    value={String(line.quantity)}
+                    aria-label={`Quantity of ${name}`}
+                    onChange={(e) =>
+                      setLines((prev) => setQuantity(prev, line.key, Number(e.target.value)))
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => bump(line.key, 1)}
+                    aria-label={`One more ${name}`}
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100"
+                  >
+                    <Plus size={20} />
+                  </button>
+                </div>
+
+                <Select
+                  className="h-12 w-44 text-sm"
+                  value={line.locationId ?? locationId}
+                  aria-label={`Location for ${name}`}
+                  onChange={(e) => setLines((prev) => setLineLocation(prev, line.key, e.target.value))}
+                >
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {locationLabel(l)}
+                    </option>
+                  ))}
+                </Select>
+
+                <Button
+                  variant="outline"
+                  className="h-12 px-4"
+                  onClick={() => setLines((prev) => removeLine(prev, line.key))}
+                >
+                  Remove
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Always reachable, never scrolled past. */}
+      <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-white px-5 py-4">
+        <div>
+          <p className="text-2xl font-bold tabular-nums text-slate-900">
+            {summary.units} {summary.units === 1 ? 'unit' : 'units'}
           </p>
-          <p className="text-xs text-slate-500 tabular-nums">
-            {summary.lines} {summary.lines === 1 ? 'line' : 'lines'} · {summary.units}{' '}
-            {summary.units === 1 ? 'unit' : 'units'}
+          <p className="text-sm text-slate-500">
+            {summary.lines} {summary.lines === 1 ? 'line' : 'lines'}
             {summary.newProducts > 0 ? ` · ${summary.newProducts} new` : ''}
+            {blocker && lines.length > 0 ? ` · ${blocker}` : ''}
           </p>
         </div>
-
-        {lines.length === 0 ? (
-          <p className="px-4 py-10 text-center text-sm text-slate-400">
-            Scan or type a code to start. Scanning the same item again adds one more.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[45rem] text-left text-sm">
-              <thead className="border-b border-slate-100 text-slate-500">
-                <tr>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Product</th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Quantity</th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Into</th>
-                  <th className="px-4 py-2.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {lines.map((line) => {
-                  const name = isNewLine(line) ? line.draft.productName : line.productName
-                  const sku = isNewLine(line) ? line.draft.skuCode : line.skuCode
-
-                  return (
-                    <tr key={line.key}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-800">
-                          {name}
-                          {isNewLine(line) ? (
-                            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                              New
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="font-mono text-xs text-slate-400">{sku}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Input
-                          type="number"
-                          min="1"
-                          className="h-9 w-24"
-                          value={String(line.quantity)}
-                          aria-label={`Quantity of ${name}`}
-                          onChange={(e) =>
-                            setLines((prev) =>
-                              setQuantity(prev, line.key, Number(e.target.value)),
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <Select
-                          className="h-9"
-                          value={line.locationId ?? locationId}
-                          aria-label={`Location for ${name}`}
-                          onChange={(e) =>
-                            setLines((prev) =>
-                              setLineLocation(prev, line.key, e.target.value),
-                            )
-                          }
-                        >
-                          {locations.map((l) => (
-                            <option key={l.id} value={l.id}>
-                              {locationLabel(l)}
-                            </option>
-                          ))}
-                        </Select>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setLines((prev) => removeLine(prev, line.key))}
-                          aria-label={`Remove ${name} from this delivery`}
-                          className="text-slate-400 transition-colors hover:text-rose-600"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">
-          {blocker && lines.length > 0 ? blocker : 'Nothing is saved until you check it in.'}
-        </p>
-        <Button onClick={() => void commit()} disabled={Boolean(blocker)} loading={committing}>
-          {committing ? 'Checking in…' : `Check in ${summary.units || ''}`.trim()}
+        <Button
+          className="h-14 px-8 text-base"
+          onClick={() => void commit()}
+          disabled={Boolean(blocker)}
+          loading={committing}
+        >
+          {committing ? 'Checking in…' : 'Check all in'}
         </Button>
-      </div>
+      </footer>
 
       <BarcodeScanner
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScan={(value) => void handleCode(value)}
         title="Scan the delivery"
-        description="Keep scanning — the list builds as you go. The same item again adds one more."
-        // Stays open between reads; that is the whole point of a goods-in bench.
+        description="Keep scanning — the list builds as you go."
         continuous
       />
 
       {looking ? (
-        <p className="flex items-center gap-2 text-xs text-slate-500">
-          <Spinner /> Looking that code up…
+        <p className="pointer-events-none fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white">
+          <Spinner /> Looking that up…
         </p>
       ) : null}
     </div>

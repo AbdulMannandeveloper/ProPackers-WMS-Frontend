@@ -15,6 +15,7 @@ import { appRoutes } from '@/routes/app'
 import { clientRoutes } from '@/routes/client'
 import AdminSignupPage from '@/pages/auth/admin-signup'
 import SetupPasswordPage from '@/pages/auth/setup-password'
+import ReceivingPage from '@/pages/receiving/index'
 import Error403 from '@/pages/error/403'
 import NotFound404 from '@/pages/error/404'
 
@@ -60,6 +61,19 @@ function App() {
                 <SetupPasswordPage />
               </TitledRoute>
             </AuthLayout>
+          }
+        />
+
+        {/* Goods-in owns the screen: no sidebar, no tabs, no KPI cards.
+            Declared here rather than under /app for that reason. */}
+        <Route
+          path="/receiving"
+          element={
+            <ProtectedRoute requireAuth allowedRoles={['admin', 'employee']}>
+              <TitledRoute title="Receive Stock">
+                <ReceivingPage />
+              </TitledRoute>
+            </ProtectedRoute>
           }
         />
 
