@@ -84,7 +84,7 @@ export type ProductDetail = {
   totalQuantity: number
   recentMovements: Array<{
     id: string
-    movementType: 'CHECKIN' | 'CHECKOUT' | 'INTERNAL_MOVE'
+    movementType: 'CHECKIN' | 'CHECKOUT' | 'INTERNAL_MOVE' | 'RETURN' | 'ADJUSTMENT'
     quantity: number
     timestamp: string
     notes?: string | null

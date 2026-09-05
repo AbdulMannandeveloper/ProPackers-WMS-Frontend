@@ -104,7 +104,9 @@ export default function InventoryPage() {
 
   // Stock Adjustment Form State
   const [adjustProductId, setAdjustProductId] = useState('')
-  const [adjustMovementType, setAdjustMovementType] = useState<'CHECKIN' | 'INTERNAL_MOVE' | 'CHECKOUT'>('CHECKIN')
+  const [adjustMovementType, setAdjustMovementType] = useState<
+    'CHECKIN' | 'INTERNAL_MOVE' | 'CHECKOUT' | 'ADJUSTMENT'
+  >('CHECKIN')
   const [adjustFromLocationId, setAdjustFromLocationId] = useState('')
   const [adjustToLocationId, setAdjustToLocationId] = useState('')
   const [adjustQuantity, setAdjustQuantity] = useState(1)
@@ -473,6 +475,16 @@ export default function InventoryPage() {
         payload.toLocationId = adjustToLocationId
         if (adjustFromLocationId === adjustToLocationId) {
           showToast('Source and destination locations must be different.', 'error')
+          setAdjustSaving(false)
+          return
+        }
+      } else if (adjustMovementType === 'ADJUSTMENT') {
+        // Stock leaving with no shipment behind it. The reason is the only
+        // record of why, so it is required here as well as on the server —
+        // catching it before the round trip keeps the typed quantity on screen.
+        payload.fromLocationId = adjustFromLocationId
+        if (!adjustNotes.trim()) {
+          showToast('Say what happened to the stock — a write-off needs a reason.', 'error')
           setAdjustSaving(false)
           return
         }
@@ -1564,15 +1576,20 @@ export default function InventoryPage() {
                 >
                   {selectedProduct.isDeactivated ? 'Reactivate' : 'Deactivate'}
                 </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    setDetailOpen(false)
-                    setDeleteConfirmOpen(true)
-                  }}
-                >
-                  Delete
-                </Button>
+                {/* Admin only, matching the route. An employee pressing this
+                    would only ever get a 403 — Deactivate is their reversible
+                    equivalent and sits right beside it. */}
+                {isAdmin && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setDetailOpen(false)
+                      setDeleteConfirmOpen(true)
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
                 <Button
                   disabled={selectedProduct.isDeactivated}
                   onClick={() => {
@@ -1851,6 +1868,11 @@ export default function InventoryPage() {
                 <option value="CHECKIN">Stock In — receiving from supplier</option>
                 <option value="INTERNAL_MOVE">Move — between warehouse locations</option>
                 <option value="CHECKOUT">Stock Out — dispatch to customer</option>
+                {/* The way to reduce stock when nothing shipped. Without it the
+                    only option was Stock Out, which demands a real dispatched
+                    shipment — so damage and miscounts had to be recorded as
+                    goods leaving on someone's order. */}
+                <option value="ADJUSTMENT">Write Off — damage, loss or a miscount</option>
               </Select>
             </div>
             <div>
@@ -1869,8 +1891,10 @@ export default function InventoryPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {/* Show Source Slot for checkout/move */}
-            {(adjustMovementType === 'CHECKOUT' || adjustMovementType === 'INTERNAL_MOVE') && (
+            {/* Show Source Slot for anything leaving a bin */}
+            {(adjustMovementType === 'CHECKOUT' ||
+              adjustMovementType === 'INTERNAL_MOVE' ||
+              adjustMovementType === 'ADJUSTMENT') && (
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                   Source Slot (From) *
@@ -1913,27 +1937,43 @@ export default function InventoryPage() {
           {/* Show reference shipment input only for check-out */}
           {adjustMovementType === 'CHECKOUT' && (
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Reference ID (Shipment ID) *
+              <label htmlFor="adjust-reference" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                Shipment Label *
               </label>
               <Input
-                placeholder="Logistics UUID matching a Dispatched shipment"
+                id="adjust-reference"
+                placeholder="The label scanned off the parcel, e.g. SHP-000123"
                 value={adjustReferenceId}
                 onChange={(e) => setAdjustReferenceId(e.target.value)}
                 required
               />
+              <p className="mt-1 text-xs text-slate-400">
+                Must match a shipment that has been dispatched.
+              </p>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-              Transaction Notes
+            <label htmlFor="adjust-notes" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              {adjustMovementType === 'ADJUSTMENT' ? 'Reason *' : 'Transaction Notes'}
             </label>
             <Input
-              placeholder="e.g. Weekly manual stock verification or slot relocation"
+              id="adjust-notes"
+              placeholder={
+                adjustMovementType === 'ADJUSTMENT'
+                  ? 'e.g. Crushed by a pallet truck; 3 short on the quarterly count'
+                  : 'e.g. Weekly manual stock verification or slot relocation'
+              }
               value={adjustNotes}
               onChange={(e) => setAdjustNotes(e.target.value)}
+              required={adjustMovementType === 'ADJUSTMENT'}
             />
+            {adjustMovementType === 'ADJUSTMENT' && (
+              <p className="mt-1 text-xs text-slate-400">
+                Nothing else records why this stock left, so a reason is required.
+                Units already reserved for a shipment cannot be written off.
+              </p>
+            )}
           </div>
         </form>
       </Modal>
@@ -2091,9 +2131,14 @@ export default function InventoryPage() {
             <span className="font-semibold text-slate-900 dark:text-white">{selectedProduct?.productName}</span> (SKU:{' '}
             <span className="font-mono">{selectedProduct?.skuCode}</span>)?
           </p>
-          <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 p-3 rounded-xl">
-            <strong>Warning:</strong> This action cannot be undone. It will remove the product registration. If there
-            are active ledger entries or physical stock, the database will restrict this delete to maintain system integrity.
+          {/* The old copy said the database would "restrict this delete to
+              maintain system integrity", which described a 500. The rules are
+              checked properly now, so they can be stated as rules. */}
+          <p className="text-xs text-slate-600 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 p-3 rounded-xl">
+            This works only for a product that was never used — nothing on the
+            shelf, no recorded movements, and not on any shipment. Anything else
+            is refused, and <strong>Deactivate</strong> is what you want: it hides
+            the product and keeps its history.
           </p>
         </div>
       </Modal>

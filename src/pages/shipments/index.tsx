@@ -17,8 +17,6 @@ import {
   Modal,
 } from '@/components/Shared Components'
 import { TrackingChip } from '@/components/TrackingChip'
-import {
-} from '@/features/shipments/picking'
 import { validateTrackingId, normaliseTrackingId } from '@/lib/couriers'
 
 export default function ShipmentsPage() {
@@ -415,7 +413,7 @@ export default function ShipmentsPage() {
                     <th className="pb-3 font-semibold">Shipment Ref</th>
                     <th className="pb-3 font-semibold">Client Company</th>
                     <th className="pb-3 font-semibold">Assigned Operator</th>
-                    <th className="pb-3 font-semibold">Courier / Container</th>
+                    <th className="pb-3 font-semibold">Tracking</th>
                     <th className="pb-3 font-semibold text-center">Items Count</th>
                     <th className="pb-3 font-semibold">Created On</th>
                     <th className="pb-3 font-semibold text-center">Status</th>
@@ -432,8 +430,12 @@ export default function ShipmentsPage() {
                   ) : (
                     shipments.map((s) => (
                       <tr key={s.id}>
+                        {/* The label scanned off the parcel. This column used to
+                            show eight characters of the row's uuid, which
+                            matched nothing on the parcel, the invoice or the
+                            ledger. */}
                         <td className="py-4 font-mono font-bold text-slate-800 dark:text-slate-200">
-                          {s.id.slice(0, 8).toUpperCase()}
+                          {s.reference}
                         </td>
                         <td className="py-4 font-semibold text-slate-900 dark:text-slate-100">
                           {s.client?.companyName || '—'}
@@ -441,18 +443,17 @@ export default function ShipmentsPage() {
                         <td className="py-4 text-slate-600 dark:text-slate-400">
                           {getEmployeeName(s.employee)}
                         </td>
+                        {/* Courier and packaging were dropped from the schema in
+                            Phase 20, so this column printed two blanks around
+                            the tracking chip. The chip is the column now. */}
                         <td className="py-4">
-                          <div className="font-medium">{s.courierName}</div>
-                          <span className="text-xs text-slate-400 block">Pkg: {s.packagingType}</span>
                           {s.trackingId ? (
-                            <div className="mt-1">
-                              <TrackingChip
-                                trackingId={s.trackingId}
-                                courierName={s.courierName}
-                                onNotify={showToast}
-                              />
-                            </div>
-                          ) : null}
+                            <TrackingChip trackingId={s.trackingId} onNotify={showToast} />
+                          ) : (
+                            <span className="text-xs text-slate-400">
+                              {s.status === 'DISPATCHED' ? 'Not recorded' : 'Once dispatched'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-4 text-center font-bold">
                           {s.shipmentItems?.length || 0} items
@@ -566,8 +567,8 @@ export default function ShipmentsPage() {
                 <strong className="text-slate-700 dark:text-slate-200">{getEmployeeName(selectedShipment.employee)}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Courier / Container</span>
-                <strong className="text-slate-700 dark:text-slate-200">{selectedShipment.courierName} ({selectedShipment.packagingType})</strong>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Shipment Ref</span>
+                <strong className="font-mono text-slate-700 dark:text-slate-200">{selectedShipment.reference}</strong>
               </div>
               <div>
                 <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Shipment Status</span>
@@ -603,14 +604,12 @@ export default function ShipmentsPage() {
                     Courier Tracking Number
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Click the number to copy it, or the arrow to open{' '}
-                    {selectedShipment.courierName}.
+                    Click the number to copy it.
                   </p>
                 </div>
                 {selectedShipment.trackingId ? (
                   <TrackingChip
                     trackingId={selectedShipment.trackingId}
-                    courierName={selectedShipment.courierName}
                     onNotify={showToast}
                   />
                 ) : (
@@ -844,7 +843,7 @@ export default function ShipmentsPage() {
         }
       >
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          Are you sure you want to cancel shipment <strong className="font-mono text-rose-500">{selectedShipment?.id.slice(0, 8).toUpperCase()}</strong>?
+          Are you sure you want to cancel shipment <strong className="font-mono text-rose-500">{selectedShipment?.reference}</strong>?
         </p>
       </Modal>
     </div>

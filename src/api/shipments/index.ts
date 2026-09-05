@@ -54,12 +54,15 @@ export type ShipmentService = {
 
 export type Shipment = {
   id: string
-  employeeId: string
+  /**
+   * The label scanned off the parcel. This is how a shipment is identified
+   * everywhere a person looks at one — on the paperwork, on the invoice line,
+   * in the ledger. `id` is a database key and is never shown.
+   */
+  reference: string
+  employeeId?: string | null
   clientId: string
-  shipmentType: string
   status: ShipmentStatus
-  packagingType: string
-  courierName: string
   /** Courier consignment number. An item's own trackingId takes precedence. */
   trackingId?: string | null
   createdAt: string
@@ -127,15 +130,13 @@ export const createShipment = (payload: {
 }): Promise<Shipment> =>
   httpClient({ method: 'POST', url: `${BASE}/`, data: payload })
 
-export const updateShipment = (
-  id: string,
-  payload: {
-    shipmentType?: string
-    packagingType?: string
-    courierName?: string
-  }
-): Promise<Shipment> =>
-  httpClient({ method: 'PUT', url: `${BASE}/${id}`, data: payload })
+/*
+ * No updateShipment helper any more. Its payload was shipmentType, packagingType
+ * and courierName — all three dropped from the schema in Phase 20 — and the
+ * server's update allowlist (SHIPMENT_UPDATE_FIELDS) is now empty, so the call
+ * could only ever send fields that were stripped on arrival. It had no callers.
+ * Tracking is set through setShipmentTracking below.
+ */
 
 /**
  * The courier consignment number.
@@ -230,7 +231,6 @@ export default {
   getShipmentsByClientId,
   getShipmentById,
   createShipment,
-  updateShipment,
   setShipmentTracking,
   markShipmentReady,
   dispatchShipment,

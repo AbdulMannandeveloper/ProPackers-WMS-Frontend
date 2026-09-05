@@ -102,6 +102,10 @@ export default function ClientPortalPage() {
 
   // Shipments — read-only. The one thing a client actually rings about.
   const [shipments, setShipments] = useState<Shipment[]>([])
+  // Opening a shipment needs no fetch: the list endpoint already returns each
+  // one's items, and the server strips the bin they were picked from before it
+  // reaches a client.
+  const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null)
 
   // Ledger (US-063)
   const [, setLedgers] = useState<InventoryLedgerEntry[]>([])
@@ -431,11 +435,13 @@ export default function ClientPortalPage() {
                     <thead className="border-b border-slate-100 text-slate-500">
                       <tr>
                         <th className="p-4 font-semibold">Order</th>
-                        <th className="p-4 font-semibold">Courier</th>
                         <th className="p-4 font-semibold text-center">Items</th>
                         <th className="p-4 font-semibold">Tracking</th>
                         <th className="p-4 font-semibold">Raised</th>
                         <th className="p-4 font-semibold text-center">Status</th>
+                        <th className="p-4 font-semibold text-right">
+                          <span className="sr-only">Details</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -448,27 +454,18 @@ export default function ClientPortalPage() {
                       ) : (
                         shipments.map((sh) => (
                           <tr key={sh.id}>
+                            {/* The label on the parcel — the same one printed on
+                                the invoice line, so a query about either can be
+                                traced to the other. */}
                             <td className="p-4 font-mono font-semibold text-slate-800">
-                              {sh.id.slice(0, 8).toUpperCase()}
+                              {sh.reference}
                             </td>
-                            <td className="p-4">
-                              <div>{sh.courierName}</div>
-                              <span className="block text-xs text-slate-400">
-                                {sh.packagingType}
-                              </span>
-                            </td>
-                            {/* Item count only. Which bin they came out of is our
-                                warehouse layout, not the client's business. */}
                             <td className="p-4 text-center font-bold">
                               {sh.shipmentItems?.length ?? 0}
                             </td>
                             <td className="p-4">
                               {sh.trackingId ? (
-                                <TrackingChip
-                                  trackingId={sh.trackingId}
-                                  courierName={sh.courierName}
-                                  onNotify={showToast}
-                                />
+                                <TrackingChip trackingId={sh.trackingId} onNotify={showToast} />
                               ) : (
                                 <span className="text-xs text-slate-400">
                                   {sh.status === 'DISPATCHED' ? 'Not provided' : 'Once dispatched'}
@@ -493,6 +490,15 @@ export default function ClientPortalPage() {
                               >
                                 {sh.status === 'READY_FOR_DISPATCH' ? 'READY' : sh.status}
                               </Badge>
+                            </td>
+                            <td className="p-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedShipment(sh)}
+                                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+                              >
+                                View items
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -662,6 +668,127 @@ export default function ClientPortalPage() {
           )}
         </>
       )}
+
+      {/* ────────────────────── MODAL: SHIPMENT DETAIL ────────────────────── */}
+      {/* What was in the order. The list already carries the items, so opening
+          one costs no round trip — and what it deliberately does not carry is
+          the bin each line was picked from, which the server strips for a
+          client. That is our warehouse layout, not their consignment. */}
+      <Modal
+        open={Boolean(selectedShipment)}
+        onClose={() => setSelectedShipment(null)}
+        title={selectedShipment ? `Shipment ${selectedShipment.reference}` : 'Shipment'}
+        description={
+          selectedShipment
+            ? `Raised ${new Date(selectedShipment.createdAt).toLocaleDateString('en-GB', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+              })}`
+            : ''
+        }
+        size="lg"
+        footer={
+          <div className="flex justify-end">
+            <Button variant="secondary" onClick={() => setSelectedShipment(null)}>
+              Close
+            </Button>
+          </div>
+        }
+      >
+        {selectedShipment && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm dark:bg-slate-900/50 sm:grid-cols-3">
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Status
+                </span>
+                <Badge
+                  variant="secondary"
+                  className={
+                    selectedShipment.status === 'DISPATCHED'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : selectedShipment.status === 'CANCELLED'
+                        ? 'bg-slate-100 text-slate-600'
+                        : 'bg-amber-100 text-amber-800'
+                  }
+                >
+                  {selectedShipment.status === 'READY_FOR_DISPATCH'
+                    ? 'READY'
+                    : selectedShipment.status}
+                </Badge>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Items
+                </span>
+                <strong className="tabular-nums">
+                  {(selectedShipment.shipmentItems ?? []).reduce(
+                    (sum, item) => sum + (item.quantity ?? 0),
+                    0,
+                  )}{' '}
+                  units
+                </strong>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Tracking
+                </span>
+                {selectedShipment.trackingId ? (
+                  <TrackingChip trackingId={selectedShipment.trackingId} onNotify={showToast} />
+                ) : (
+                  <span className="text-xs italic text-slate-400">Not provided</span>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-100">
+              <table className="w-full min-w-[26rem] text-left text-sm">
+                <thead className="border-b border-slate-100 bg-slate-50 text-xs uppercase tracking-wider text-slate-500 dark:bg-slate-900/50">
+                  <tr>
+                    <th className="p-3 font-semibold">Product</th>
+                    <th className="p-3 font-semibold">SKU</th>
+                    <th className="p-3 text-center font-semibold">Sent</th>
+                    <th className="p-3 text-center font-semibold">Returned</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {(selectedShipment.shipmentItems ?? []).length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-slate-400">
+                        Nothing on this shipment yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    (selectedShipment.shipmentItems ?? []).map((item) => (
+                      <tr key={item.id}>
+                        <td className="p-3 font-medium text-slate-800">
+                          {item.product?.productName ?? '—'}
+                        </td>
+                        <td className="p-3 font-mono text-xs text-slate-500">
+                          {item.product?.skuCode ?? '—'}
+                        </td>
+                        <td className="p-3 text-center font-semibold tabular-nums">
+                          {item.quantity}
+                        </td>
+                        <td className="p-3 text-center tabular-nums">
+                          {item.returnedQuantity ? (
+                            <span className="font-semibold text-amber-700">
+                              {item.returnedQuantity}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ────────────────────── MODAL: INVOICE DETAIL (US-095) ────────────────────── */}
       <Modal
