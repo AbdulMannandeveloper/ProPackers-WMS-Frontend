@@ -1,17 +1,17 @@
-import { AlertTriangle, Check, ScanLine } from 'lucide-react'
+import { AlertTriangle, Check, ScanLine, XCircle } from 'lucide-react'
 
 /**
- * The thing the operator watches instead of the screen.
+ * The scanner's status line.
  *
  * The barcode gun is how these screens are really driven, and nothing said so:
- * both showed a text box reading "Type a barcode or SKU" and a Camera button,
- * so the primary input was the one input with no affordance at all. Someone new
- * to the bench would type every code by hand.
+ * both showed a text box and a Camera button, so the primary input was the one
+ * input with no affordance at all. This states that the reader is live, then
+ * reports what it read, in the same place.
  *
- * So this states plainly that the app is listening, and then reacts — the same
- * panel becomes the confirmation, in the same place, at a size readable without
- * looking up from the carton. It also fills the dead space that made these
- * screens look unfinished.
+ * A single row, the height of a toolbar. The earlier version was a large
+ * dashed panel with a centred icon, which filled the screen with reassurance
+ * and pushed the goods below the fold. Status is carried by a rule down the
+ * left edge and a word, the way an instrument reads out.
  */
 
 export type ScanOutcome = {
@@ -23,21 +23,14 @@ export type ScanOutcome = {
 }
 
 const TONES = {
-  ok: {
-    frame: 'border-emerald-300 bg-emerald-50',
-    badge: 'bg-emerald-600 text-white',
-    Icon: Check,
-  },
+  ok: { rule: 'border-l-emerald-600', text: 'text-emerald-700', word: 'Accepted', Icon: Check },
   attention: {
-    frame: 'border-amber-300 bg-amber-50',
-    badge: 'bg-amber-500 text-white',
+    rule: 'border-l-amber-500',
+    text: 'text-amber-700',
+    word: 'Needs detail',
     Icon: AlertTriangle,
   },
-  refused: {
-    frame: 'border-rose-300 bg-rose-50',
-    badge: 'bg-rose-600 text-white',
-    Icon: AlertTriangle,
-  },
+  refused: { rule: 'border-l-rose-600', text: 'text-rose-700', word: 'Rejected', Icon: XCircle },
 } as const
 
 type Props = {
@@ -50,48 +43,59 @@ type Props = {
 
 export function ScanPanel({
   outcome,
-  idleTitle = 'Ready to scan',
-  idleHint = 'Point the barcode gun at a label — or type the code in below.',
+  idleTitle = 'Awaiting scan',
+  idleHint = 'Scanner is live. A code can also be typed in below.',
 }: Props) {
   if (!outcome) {
     return (
       <div
-        className="rounded-3xl border-2 border-dashed border-slate-300 bg-white px-6 py-10 text-center"
+        className="flex items-center gap-3 border border-slate-200 border-l-4 border-l-slate-300 bg-white px-4 py-3"
         aria-live="polite"
       >
-        <ScanLine className="mx-auto mb-3 text-slate-400" size={40} strokeWidth={1.5} />
-        <p className="text-xl font-bold text-slate-800">{idleTitle}</p>
-        <p className="mt-1 text-base text-slate-500">{idleHint}</p>
+        <ScanLine size={18} className="shrink-0 text-slate-400" />
+
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+            {idleTitle}
+          </p>
+          <p className="truncate text-[13px] text-slate-500">{idleHint}</p>
+        </div>
+
+        {/* Hardware state, read the way a device reports it. */}
+        <span className="ml-auto hidden shrink-0 items-center gap-1.5 sm:flex">
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+          <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
+            Listening
+          </span>
+        </span>
       </div>
     )
   }
 
-  const { frame, badge, Icon } = TONES[outcome.tone]
+  const { rule, text, word, Icon } = TONES[outcome.tone]
 
   return (
-    <div className={`rounded-3xl border-2 px-6 py-6 transition-colors ${frame}`} aria-live="polite">
-      <div className="flex items-center gap-4">
-        <span className={`flex size-12 shrink-0 items-center justify-center rounded-full ${badge}`}>
-          <Icon size={24} strokeWidth={2.5} />
-        </span>
+    <div
+      className={`flex items-center gap-3 border border-slate-200 border-l-4 bg-white px-4 py-3 ${rule}`}
+      aria-live="polite"
+    >
+      <Icon size={18} className={`shrink-0 ${text}`} />
 
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-2xl font-bold tracking-tight text-slate-900">
-            {outcome.title}
-          </p>
-          {outcome.detail ? (
-            <p className="mt-0.5 text-base text-slate-600">{outcome.detail}</p>
-          ) : null}
-        </div>
-
-        {/* The running total for this item, big enough to read at arm's length
-            — the number the operator is actually keeping track of. */}
-        {typeof outcome.count === 'number' && outcome.count > 0 ? (
-          <p className="shrink-0 text-4xl font-black tabular-nums text-slate-900">
-            ×{outcome.count}
-          </p>
+      <div className="min-w-0 flex-1">
+        <p className={`text-[11px] font-semibold uppercase tracking-[0.09em] ${text}`}>{word}</p>
+        <p className="truncate text-sm font-semibold text-slate-900">{outcome.title}</p>
+        {outcome.detail ? (
+          <p className="truncate font-mono text-xs text-slate-500">{outcome.detail}</p>
         ) : null}
       </div>
+
+      {/* The running total for this item — the number the operator is keeping
+          track of, and the only thing here set larger than body text. */}
+      {typeof outcome.count === 'number' && outcome.count > 0 ? (
+        <p className="shrink-0 text-2xl font-semibold tabular-nums text-slate-900">
+          &times;{outcome.count}
+        </p>
+      ) : null}
     </div>
   )
 }
