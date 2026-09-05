@@ -3,11 +3,26 @@ import { fetchAllPages, type PaginatedResponse, unwrapList } from '../pagination
 
 const BASE = '/api/inventory-ledgers'
 
+/**
+ * RETURN is written by the server when goods come back after dispatch; nothing
+ * in the UI raises one, but it comes back on reads.
+ *
+ * ADJUSTMENT is stock written off the shelf with no shipment behind it — damage,
+ * loss, a miscount. It is the only way to reduce stock without naming a
+ * shipment, which is why it exists at all.
+ */
+export type MovementType =
+  | 'CHECKIN'
+  | 'INTERNAL_MOVE'
+  | 'CHECKOUT'
+  | 'RETURN'
+  | 'ADJUSTMENT'
+
 export type InventoryLedgerEntry = {
   id: string
   productId: string
   userId: string
-  movementType: 'CHECKIN' | 'INTERNAL_MOVE' | 'CHECKOUT'
+  movementType: MovementType
   quantity: number
   fromLocationId?: string | null
   toLocationId?: string | null
@@ -87,7 +102,8 @@ export const getDailyCheckoutSummary = (date?: string): Promise<any[]> => {
 
 export const createInventoryLedgerEntry = (payload: {
   productId: string
-  movementType: 'CHECKIN' | 'INTERNAL_MOVE' | 'CHECKOUT'
+  /** RETURN is the server's to write, off the back of a shipment item. */
+  movementType: 'CHECKIN' | 'INTERNAL_MOVE' | 'CHECKOUT' | 'ADJUSTMENT'
   quantity: number
   fromLocationId?: string | null
   toLocationId?: string | null

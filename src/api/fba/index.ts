@@ -75,6 +75,16 @@ export const dispatchShipment = (id: string): Promise<FbaShipment> =>
 export const cancelShipment = (id: string, reason?: string): Promise<FbaShipment> =>
   httpClient({ method: 'POST', url: `${BASE}/${id}/cancel`, data: { reason } })
 
+/**
+ * Removes the record entirely, for one that was never really here.
+ *
+ * Admin only, and refused once dispatched: that consignment raised an invoice
+ * line naming its barcode, and deleting the row would leave the line describing
+ * nothing. Cancel is not available then either — a credit is.
+ */
+export const deleteShipment = (id: string): Promise<{ message: string }> =>
+  httpClient({ method: 'DELETE', url: `${BASE}/${id}` })
+
 export default {
   getCategories,
   createCategory,
@@ -85,4 +95,5 @@ export default {
   recordArrival,
   dispatchShipment,
   cancelShipment,
+  deleteShipment,
 }

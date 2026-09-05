@@ -46,6 +46,9 @@ export default function FbaPage() {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
   const [newCategory, setNewCategory] = useState('')
 
+  // Deleting is irreversible and there is no undo, so it is confirmed.
+  const [deleting, setDeleting] = useState<FbaShipment | null>(null)
+
   const [createOpen, setCreateOpen] = useState(false)
   const [formCategoryId, setFormCategoryId] = useState('')
   const [formClientId, setFormClientId] = useState('')
@@ -169,6 +172,25 @@ export default function FbaPage() {
     }
   }
 
+  /**
+   * Removes the record of one recorded in error. Cancelling leaves it visible
+   * as a void; this takes the row away entirely, which only makes sense for
+   * something that was never really here.
+   *
+   * The server refuses a dispatched one — it has been billed — and says so; that
+   * message is shown rather than replaced.
+   */
+  const handleDelete = async (shipment: FbaShipment) => {
+    try {
+      await fbaApi.deleteShipment(shipment.id)
+      showToast(`Consignment ${shipment.barcode} deleted.`)
+      setDeleting(null)
+      await loadData()
+    } catch (err) {
+      showToast(errorFrom(err, 'Could not delete it.'), 'error')
+    }
+  }
+
   const statusStyle = (status: FbaShipment['status']) =>
     status === 'DISPATCHED'
       ? 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200'
@@ -270,6 +292,20 @@ export default function FbaPage() {
                       {isAdmin && s.status === 'RECEIVED' && (
                         <Button size="sm" variant="outline" onClick={() => handleCancel(s)}>
                           Void
+                        </Button>
+                      )}
+                      {/* Offered only where it can succeed. A dispatched
+                          consignment has been billed, and the server refuses —
+                          showing the button anyway would be a promise the
+                          system does not keep. */}
+                      {isAdmin && s.status !== 'DISPATCHED' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setDeleting(s)}
+                          title="Removes the record entirely"
+                        >
+                          Delete
                         </Button>
                       )}
                     </td>
@@ -375,6 +411,31 @@ export default function FbaPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── Deleting a consignment ────────────────────────────────────────── */}
+      <Modal
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        title="Delete this consignment?"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => deleting && void handleDelete(deleting)}>
+              Delete it
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          The record of{' '}
+          <strong className="font-mono">{deleting?.barcode}</strong> —{' '}
+          {deleting?.count} item(s) for {deleting?.client?.companyName ?? 'this client'} — is
+          removed for good. Use <strong>Void</strong> instead to keep it on file as
+          cancelled.
+        </p>
       </Modal>
 
       {/* ── Categories ────────────────────────────────────────────────────── */}
