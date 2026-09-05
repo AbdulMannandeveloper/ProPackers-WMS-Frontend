@@ -5,6 +5,9 @@ import { products as productsApi, shipments as shipmentsApi } from '@/api'
 import type { ScanMatch } from '@/api/products'
 import { Button, Input, Spinner } from '@/components/Shared Components'
 import { BarcodeScanner, createWedgeListener } from '@/components/scanner'
+import { ConfirmCommit } from '@/features/scanning/ConfirmCommit'
+import { ScanPanel, type ScanOutcome } from '@/features/scanning/ScanPanel'
+import { StepRail } from '@/features/scanning/StepRail'
 import { errorMessage } from '@/lib/errors'
 import { isMuted, setMuted, signal } from '@/lib/feedback'
 
@@ -64,6 +67,8 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   const [error, setError] = useState('')
   const [muted, setMutedState] = useState(isMuted)
   const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [lastScan, setLastScan] = useState<ScanOutcome | null>(null)
 
   const clientId = useMemo(() => clientOfBasket(lines), [lines])
   const clientName = useMemo(
@@ -123,6 +128,11 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         // Outbound cannot invent a product: you cannot ship what was never
         // received. This is the one place a new product is wrong.
         setError(`Nothing matches ${code}. It has to be received before it can ship.`)
+        setLastScan({
+          tone: 'refused',
+          title: 'Not in stock',
+          detail: `${code} has to be received before it can ship`,
+        })
         signal('refused')
         return
       }
@@ -136,6 +146,11 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         setError(
           `${code} matches ${matches.length} products across different clients. Pick it from the products list instead.`,
         )
+        setLastScan({
+          tone: 'refused',
+          title: 'Which client is this?',
+          detail: `${code} belongs to ${matches.length} different clients`,
+        })
         signal('refused')
         return
       }
@@ -143,6 +158,11 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
       const refusal = describeForeignPick(match, clientId, clientName)
       if (refusal) {
         setError(refusal)
+        setLastScan({
+          tone: 'refused',
+          title: 'Wrong client',
+          detail: `${match.productName} belongs to ${match.client?.companyName ?? 'someone else'}`,
+        })
         signal('refused')
         return
       }
@@ -156,6 +176,12 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         setLines((prev) =>
           mergeLines(prev, toPickLines(match, bins, { [bins[0].locationId]: 1 })),
         )
+        setLastScan({
+          tone: 'ok',
+          title: match.productName,
+          detail: `${match.skuCode} from ${bins[0].locationName}`,
+          count: 1,
+        })
         signal('accepted')
         return
       }
@@ -166,6 +192,11 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         setError(
           `${match.productName} has no stock available — every bin holding it is empty or already reserved.`,
         )
+        setLastScan({
+          tone: 'refused',
+          title: 'Nothing on the shelf',
+          detail: `${match.productName} is out of stock or fully reserved`,
+        })
         signal('refused')
         return
       }
@@ -227,25 +258,37 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   if (!reference) {
     return (
       <div className="flex min-h-screen flex-col">
-        <header className="flex items-center justify-end gap-3 border-b border-slate-200 bg-white px-5 py-4">
+        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-5 py-4">
+          <p className="mr-auto text-lg font-bold text-slate-900">Dispatch a shipment</p>
           <button
             type="button"
             onClick={toggleMute}
-            aria-label={muted ? 'Turn scan sounds on' : 'Turn scan sounds off'}
             aria-pressed={muted}
-            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
           >
-            {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+            {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            {muted ? 'Sound off' : 'Sound on'}
           </button>
           <button
             type="button"
             onClick={onDone}
-            aria-label="Close dispatch"
-            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
           >
-            <X size={22} />
+            <X size={20} />
+            Finish
           </button>
         </header>
+
+        <div className="px-5 pb-2">
+          <StepRail
+            current={1}
+            steps={[
+              { label: 'Scan the label', hint: 'The sticker on the parcel' },
+              { label: 'Pick the goods' },
+              { label: 'Send it' },
+            ]}
+          />
+        </div>
 
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="w-full max-w-xl space-y-6 text-center">
@@ -349,23 +392,39 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         <button
           type="button"
           onClick={toggleMute}
-          aria-label={muted ? 'Turn scan sounds on' : 'Turn scan sounds off'}
           aria-pressed={muted}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+          className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
         >
-          {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+          {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+          {muted ? 'Sound off' : 'Sound on'}
         </button>
         <button
           type="button"
           onClick={onDone}
-          aria-label="Close dispatch"
-          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+          className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
         >
-          <X size={22} />
+          <X size={20} />
+          Finish
         </button>
       </header>
 
+      <div className="px-5 pt-4">
+        <StepRail
+          current={lines.length > 0 ? 3 : 2}
+          steps={[
+            { label: 'Scan the label' },
+            { label: 'Pick the goods', hint: "The first item sets the client" },
+            { label: 'Send it', hint: 'Nothing leaves until you confirm' },
+          ]}
+        />
+      </div>
+
       <div className="flex-1 space-y-5 p-5">
+        <ScanPanel
+          outcome={lastScan}
+          idleHint="Point the barcode gun at a product, or type the code in below."
+        />
+
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -466,6 +525,9 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
           </div>
         )}
 
+      </div>
+
+      <footer className="sticky bottom-0 space-y-3 border-t border-slate-200 bg-white px-5 py-4">
         {/* Step three, offered once there is something to send. The courier
             issues this at collection, which is after the goods are picked. */}
         {lines.length > 0 ? (
@@ -485,9 +547,8 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
             />
           </div>
         ) : null}
-      </div>
 
-      <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-white px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-2xl font-bold tabular-nums text-slate-900">
             {units} {units === 1 ? 'unit' : 'units'}
@@ -499,12 +560,13 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         </div>
         <Button
           className="h-14 px-8 text-base"
-          onClick={() => void dispatch()}
+          onClick={() => setConfirming(true)}
           disabled={lines.length === 0}
           loading={saving}
         >
-          {saving ? 'Dispatching…' : 'Dispatch'}
+          {saving ? 'Sending…' : 'Send this shipment'}
         </Button>
+        </div>
       </footer>
 
       {/* Which bins to draw from. Outbound must come off shelves that actually
@@ -517,10 +579,37 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
           onPicked={(picked) => {
             setLines((prev) => mergeLines(prev, picked))
             setPicking(null)
+            const taken = picked.reduce((s, l) => s + l.quantity, 0)
+            setLastScan({
+              tone: 'ok',
+              title: picking.productName,
+              detail: `from ${picked.length} ${picked.length === 1 ? 'bin' : 'bins'}`,
+              count: taken,
+            })
             signal('accepted')
           }}
         />
       ) : null}
+
+      <ConfirmCommit
+        open={confirming}
+        title="Send this shipment?"
+        confirmLabel="Yes, send it"
+        busy={saving}
+        warning="The stock leaves the shelf and the client is charged. Use a return if something comes back."
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void dispatch()}
+        facts={[
+          { label: 'Shipment', value: reference },
+          { label: 'Client', value: clientName ?? 'unknown' },
+          { label: 'Goods', value: `${units} ${units === 1 ? 'unit' : 'units'} across ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}` },
+          {
+            label: 'Tracking number',
+            value: trackingId.trim() || 'not added yet',
+            emphasis: !trackingId.trim(),
+          },
+        ]}
+      />
 
       <BarcodeScanner
         open={scannerOpen}
