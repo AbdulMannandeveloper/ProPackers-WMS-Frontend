@@ -281,27 +281,30 @@ export function ReceivingSession({
         around while somebody is mid-flow. ─────────────────────────────────── */
   if (draft) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-6 p-6">
-        <div className="rounded-3xl border-2 border-amber-300 bg-amber-50 p-6">
-          <p className="text-sm font-semibold uppercase tracking-wider text-amber-800">
+      <div className="mx-auto w-full max-w-2xl space-y-5 p-6">
+        <div className="border border-slate-200 border-l-4 border-l-amber-500 bg-white px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700">
             Not in the catalogue
           </p>
-          <p className="mt-1 font-mono text-2xl font-bold text-slate-900">
+          <p className="mt-0.5 font-mono text-lg font-semibold text-slate-900">
             {draft.barcode || 'New product'}
           </p>
-          <p className="mt-2 text-base text-slate-700">
-            Tell us what it is, and it will be created when the delivery is checked in.
+          <p className="mt-1 text-[13px] text-slate-600">
+            Enter its details. The product is created when the delivery is confirmed.
           </p>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-4">
           <div>
-            <label htmlFor="draft-client" className="mb-2 block text-sm font-semibold text-slate-700">
+            <label
+              htmlFor="draft-client"
+              className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500"
+            >
               Client
             </label>
             <Select
               id="draft-client"
-              className="h-14 text-base"
+              className="h-10 text-sm [@media(pointer:coarse)]:h-12"
               value={draft.clientId}
               onChange={(e) => setDraft({ ...draft, clientId: e.target.value })}
             >
@@ -314,12 +317,15 @@ export function ReceivingSession({
           </div>
 
           <div>
-            <label htmlFor="draft-sku" className="mb-2 block text-sm font-semibold text-slate-700">
+            <label
+              htmlFor="draft-sku"
+              className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500"
+            >
               SKU
             </label>
             <Input
               id="draft-sku"
-              className="h-14 text-base"
+              className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
               value={draft.skuCode}
               onChange={(e) => setDraft({ ...draft, skuCode: e.target.value })}
               placeholder="PRO-PK-T-BLUE"
@@ -328,12 +334,15 @@ export function ReceivingSession({
           </div>
 
           <div>
-            <label htmlFor="draft-name" className="mb-2 block text-sm font-semibold text-slate-700">
+            <label
+              htmlFor="draft-name"
+              className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500"
+            >
               Name
             </label>
             <Input
               id="draft-name"
-              className="h-14 text-base"
+              className="h-10 text-sm [@media(pointer:coarse)]:h-12"
               value={draft.productName}
               onChange={(e) => setDraft({ ...draft, productName: e.target.value })}
               placeholder="Polyester tape, blue"
@@ -343,30 +352,30 @@ export function ReceivingSession({
           <button
             type="button"
             onClick={() => setDraftExtras((v) => !v)}
-            className="text-sm font-semibold text-cyan-700 hover:underline"
+            className="text-[13px] font-medium text-blue-700 hover:underline"
           >
             {draftExtras ? 'Fewer details' : 'More details (colour, size, weight)'}
           </button>
 
           {draftExtras ? (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Input
                 aria-label="Colour"
-                className="h-14 text-base"
+                className="h-10 text-sm [@media(pointer:coarse)]:h-12"
                 placeholder="Colour"
                 value={draft.colour ?? ''}
                 onChange={(e) => setDraft({ ...draft, colour: e.target.value })}
               />
               <Input
                 aria-label="Size"
-                className="h-14 text-base"
+                className="h-10 text-sm [@media(pointer:coarse)]:h-12"
                 placeholder="Size"
                 value={draft.size ?? ''}
                 onChange={(e) => setDraft({ ...draft, size: e.target.value })}
               />
               <Input
                 aria-label="Weight in kilograms"
-                className="h-14 text-base"
+                className="h-10 text-sm [@media(pointer:coarse)]:h-12"
                 type="number"
                 step="0.001"
                 placeholder="Weight (kg)"
@@ -377,7 +386,7 @@ export function ReceivingSession({
               />
               <Input
                 aria-label="Low stock threshold"
-                className="h-14 text-base"
+                className="h-10 text-sm [@media(pointer:coarse)]:h-12"
                 type="number"
                 min="0"
                 placeholder="Threshold"
@@ -388,19 +397,25 @@ export function ReceivingSession({
           ) : null}
 
           {draftError ? (
-            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-base text-rose-700" role="alert">
+            <p
+              className="border border-slate-200 border-l-4 border-l-rose-600 bg-white px-4 py-3 text-sm text-rose-700"
+              role="alert"
+            >
               {draftError}
             </p>
           ) : null}
 
-          <div className="flex gap-3">
-            <Button className="h-14 flex-1 text-base" onClick={commitDraft}>
-              <Check size={20} className="mr-2" />
-              Add and keep scanning
+          <div className="flex gap-2">
+            <Button
+              className="h-10 flex-1 text-sm [@media(pointer:coarse)]:h-12"
+              onClick={commitDraft}
+            >
+              <Check size={16} className="mr-1.5" />
+              Add item
             </Button>
             <Button
               variant="outline"
-              className="h-14 px-6 text-base"
+              className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
               onClick={() => {
                 setDraft(null)
                 setLastScan(null)
@@ -417,12 +432,12 @@ export function ReceivingSession({
   /* ── The bench ────────────────────────────────────────────────────────── */
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-slate-200 bg-white px-5 py-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Receive stock</h1>
-            <p className="text-sm text-slate-500">Booking a delivery onto the shelf.</p>
-          </div>
+      <header className="border-b border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+          <h1 className="text-base font-semibold tracking-tight text-slate-900">Goods In</h1>
+          <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+            Receiving
+          </span>
 
           {/* Labelled, not bare icons: nobody guesses what a speaker glyph
               does on a warehouse screen. */}
@@ -430,219 +445,297 @@ export function ReceivingSession({
             type="button"
             onClick={toggleMute}
             aria-pressed={muted}
-            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            className="ml-auto flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
           >
-            {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
             {muted ? 'Sound off' : 'Sound on'}
           </button>
 
           <button
             type="button"
             onClick={onDone}
-            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
           >
-            <X size={20} />
+            <X size={16} />
             Finish
           </button>
         </div>
 
-        <div className="mt-4">
-          <StepRail
-            current={lines.length > 0 ? 3 : 2}
-            steps={[
-              { label: 'Choose the shelf' },
-              { label: 'Scan the goods', hint: 'Every scan adds one' },
-              { label: 'Check and confirm', hint: 'Nothing is saved yet' },
-            ]}
-          />
-        </div>
+        <StepRail
+          current={lines.length > 0 ? 3 : 2}
+          steps={[
+            { label: 'Location' },
+            { label: 'Scan items', hint: 'A repeat scan adds one' },
+            { label: 'Confirm', hint: 'Nothing is written yet' },
+          ]}
+        />
 
-        <div className="mt-4 max-w-md">
-          <label
-            htmlFor="receiving-location"
-            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500"
-          >
-            Putting it on
-          </label>
-          <Select
-            id="receiving-location"
-            className="h-12 text-base font-semibold"
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            placeholder={locations.length ? undefined : 'No locations available'}
-          >
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {locationLabel(l)}
-              </option>
-            ))}
-          </Select>
+        {/* The working set: where it is going, and what is on the delivery so
+            far. Read left to right without scrolling to the footer. */}
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-3 border-t border-slate-200 px-5 py-3">
+          <div className="min-w-[15rem] flex-1 sm:max-w-xs">
+            <label
+              htmlFor="receiving-location"
+              className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500"
+            >
+              Location
+            </label>
+            <Select
+              id="receiving-location"
+              className="h-9 text-sm font-medium [@media(pointer:coarse)]:h-11"
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              placeholder={locations.length ? undefined : 'No locations available'}
+            >
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {locationLabel(l)}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <dl className="flex items-end gap-6">
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+                Lines
+              </dt>
+              <dd className="text-lg font-semibold tabular-nums leading-tight text-slate-900">
+                {summary.lines}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+                Units
+              </dt>
+              <dd className="text-lg font-semibold tabular-nums leading-tight text-slate-900">
+                {summary.units}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+                New
+              </dt>
+              <dd
+                className={`text-lg font-semibold tabular-nums leading-tight ${
+                  summary.newProducts > 0 ? 'text-amber-700' : 'text-slate-400'
+                }`}
+              >
+                {summary.newProducts}
+              </dd>
+            </div>
+          </dl>
         </div>
       </header>
 
-      <div className="flex-1 space-y-5 p-5">
-        {/* Says the gun is live, then becomes the confirmation. */}
+      <div className="flex-1 space-y-4 bg-slate-50 p-5">
+        {/* Says the gun is live, then reports what it read. */}
         <ScanPanel
           outcome={lastScan}
-          idleHint="Point the barcode gun at a label, or type the code in below. Scanning the same item again adds one more."
+          idleHint="Scanner is live. A repeat scan of the same item adds one."
         />
 
         {/* Typing and the camera, for a damaged label or a tablet. The gun
             needs nothing here — it is heard wherever the cursor is. */}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2">
           <form
             onSubmit={(e) => {
               e.preventDefault()
               void handleCode(manual)
             }}
-            className="flex min-w-[18rem] flex-1 gap-3"
+            className="flex min-w-[18rem] flex-1 gap-2"
           >
             <Input
               value={manual}
               onChange={(e) => setManual(e.target.value)}
-              placeholder="Type a barcode or SKU"
+              placeholder="Barcode or SKU"
               aria-label="Barcode or SKU"
-              className="h-14 text-base"
+              className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
               loading={looking}
             />
-            <Button type="submit" variant="secondary" className="h-14 px-6 text-base" disabled={!manual.trim() || looking}>
+            <Button
+              type="submit"
+              variant="secondary"
+              className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+              disabled={!manual.trim() || looking}
+            >
               Add
             </Button>
           </form>
 
           <Button
             variant="outline"
-            className="h-14 px-6 text-base"
+            className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
             onClick={() => setScannerOpen(true)}
           >
-            <Camera size={20} className="mr-2" />
+            <Camera size={16} className="mr-1.5" />
             Camera
           </Button>
         </div>
 
         {error ? (
-          <div className="rounded-2xl border-2 border-rose-200 bg-rose-50 px-4 py-3 text-base text-rose-700" role="alert">
+          <div
+            className="border border-slate-200 border-l-4 border-l-rose-600 bg-white px-4 py-3 text-sm text-rose-700"
+            role="alert"
+          >
             {error}
           </div>
         ) : null}
 
-        {/* Newest first: what just happened sits next to the card above it, not
+        {/* A manifest. Newest first: what just happened is at the top, not
             under nine earlier lines. */}
-        <div className="space-y-3">
-          {[...lines].reverse().map((line) => {
-            const name = isNewLine(line) ? line.draft.productName : line.productName
-            const sku = isNewLine(line) ? line.draft.skuCode : line.skuCode
+        <div className="overflow-x-auto border border-slate-200 bg-white">
+          <table className="w-full min-w-[48rem] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+                <th scope="col" className="px-4 py-2 font-semibold">
+                  Item
+                </th>
+                <th scope="col" className="px-4 py-2 font-semibold">
+                  SKU
+                </th>
+                <th scope="col" className="px-4 py-2 text-center font-semibold">
+                  Qty
+                </th>
+                <th scope="col" className="px-4 py-2 font-semibold">
+                  Location
+                </th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
 
-            return (
-              <div
-                key={line.key}
-                className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4"
-              >
-                <div className="min-w-[12rem] flex-1">
-                  <p className="text-lg font-semibold text-slate-900">
-                    {name}
-                    {isNewLine(line) ? (
-                      <span className="ml-2 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-amber-800">
-                        New
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="font-mono text-sm text-slate-500">{sku}</p>
-                </div>
+            <tbody className="divide-y divide-slate-100">
+              {lines.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">
+                    No items on this delivery yet.
+                  </td>
+                </tr>
+              ) : (
+                [...lines].reverse().map((line) => {
+                  const name = isNewLine(line) ? line.draft.productName : line.productName
+                  const sku = isNewLine(line) ? line.draft.skuCode : line.skuCode
 
-                {/* Steppers, not a spinner: a number input's arrows are far too
-                    small for a gloved hand. */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => bump(line.key, -1)}
-                    aria-label={`One fewer ${name}`}
-                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100"
-                  >
-                    <Minus size={20} />
-                  </button>
-                  <Input
-                    type="number"
-                    min="1"
-                    className="h-12 w-20 text-center text-lg font-bold"
-                    value={String(line.quantity)}
-                    aria-label={`Quantity of ${name}`}
-                    onChange={(e) =>
-                      setLines((prev) => setQuantity(prev, line.key, Number(e.target.value)))
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() => bump(line.key, 1)}
-                    aria-label={`One more ${name}`}
-                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100"
-                  >
-                    <Plus size={20} />
-                  </button>
-                </div>
+                  return (
+                    <tr key={line.key} className="align-middle">
+                      <td className="px-4 py-2.5">
+                        <span className="font-medium text-slate-900">{name}</span>
+                        {isNewLine(line) ? (
+                          <span className="ml-2 rounded-sm border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-amber-700">
+                            New
+                          </span>
+                        ) : null}
+                      </td>
 
-                <Select
-                  className="h-12 w-44 text-sm"
-                  value={line.locationId ?? locationId}
-                  aria-label={`Location for ${name}`}
-                  onChange={(e) => setLines((prev) => setLineLocation(prev, line.key, e.target.value))}
-                >
-                  {locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {locationLabel(l)}
-                    </option>
-                  ))}
-                </Select>
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{sku}</td>
 
-                <Button
-                  variant="outline"
-                  className="h-12 px-4"
-                  onClick={() => setLines((prev) => removeLine(prev, line.key))}
-                >
-                  Remove
-                </Button>
-              </div>
-            )
-          })}
+                      {/* Steppers, not a spinner: a number input's arrows are
+                          far too small for a gloved hand. */}
+                      <td className="px-4 py-2.5">
+                        <div className="mx-auto flex w-fit items-center">
+                          <button
+                            type="button"
+                            onClick={() => bump(line.key, -1)}
+                            aria-label={`One fewer ${name}`}
+                            className="flex size-8 items-center justify-center rounded-l-md border border-slate-300 text-slate-600 transition-colors hover:bg-slate-100 [@media(pointer:coarse)]:size-11"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <Input
+                            type="number"
+                            min="1"
+                            className="h-8 w-14 rounded-none border-x-0 text-center text-sm font-semibold tabular-nums [@media(pointer:coarse)]:h-11"
+                            value={String(line.quantity)}
+                            aria-label={`Quantity of ${name}`}
+                            onChange={(e) =>
+                              setLines((prev) => setQuantity(prev, line.key, Number(e.target.value)))
+                            }
+                          />
+                          <button
+                            type="button"
+                            onClick={() => bump(line.key, 1)}
+                            aria-label={`One more ${name}`}
+                            className="flex size-8 items-center justify-center rounded-r-md border border-slate-300 text-slate-600 transition-colors hover:bg-slate-100 [@media(pointer:coarse)]:size-11"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-2.5">
+                        <Select
+                          className="h-8 w-44 text-xs [@media(pointer:coarse)]:h-11"
+                          value={line.locationId ?? locationId}
+                          aria-label={`Location for ${name}`}
+                          onChange={(e) =>
+                            setLines((prev) => setLineLocation(prev, line.key, e.target.value))
+                          }
+                        >
+                          {locations.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {locationLabel(l)}
+                            </option>
+                          ))}
+                        </Select>
+                      </td>
+
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setLines((prev) => removeLine(prev, line.key))}
+                          className="rounded-md px-2 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-700 [@media(pointer:coarse)]:px-3 [@media(pointer:coarse)]:py-2.5"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* Always reachable, never scrolled past. */}
-      <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-white px-5 py-4">
-        <div>
-          <p className="text-2xl font-bold tabular-nums text-slate-900">
-            {summary.units} {summary.units === 1 ? 'unit' : 'units'}
-          </p>
-          <p className="text-sm text-slate-500">
-            {summary.lines} {summary.lines === 1 ? 'line' : 'lines'}
-            {summary.newProducts > 0 ? ` · ${summary.newProducts} new` : ''}
-            {blocker && lines.length > 0 ? ` · ${blocker}` : ''}
-          </p>
-        </div>
+      <footer className="sticky bottom-0 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-200 bg-white px-5 py-3">
+        <p className="text-sm text-slate-600">
+          <span className="font-semibold tabular-nums text-slate-900">{summary.units}</span>{' '}
+          {summary.units === 1 ? 'unit' : 'units'} on{' '}
+          <span className="font-semibold tabular-nums text-slate-900">{summary.lines}</span>{' '}
+          {summary.lines === 1 ? 'line' : 'lines'}
+        </p>
+
+        {blocker && lines.length > 0 ? (
+          <p className="text-[13px] text-amber-700">{blocker}</p>
+        ) : null}
+
         <Button
-          className="h-14 px-8 text-base"
+          className="ml-auto h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
           onClick={() => setConfirming(true)}
           disabled={Boolean(blocker)}
           loading={committing}
         >
-          {committing ? 'Putting it away…' : 'Put it on the shelf'}
+          {committing ? 'Confirming…' : 'Confirm receipt'}
         </Button>
       </footer>
 
       <ConfirmCommit
         open={confirming}
-        title="Put this delivery on the shelf?"
-        confirmLabel="Yes, put it away"
+        title="Confirm receipt"
+        confirmLabel="Confirm receipt"
         busy={committing}
         onCancel={() => setConfirming(false)}
         onConfirm={() => void commit()}
         facts={[
           {
-            label: 'Items',
-            value: `${summary.units} across ${summary.lines} ${summary.lines === 1 ? 'line' : 'lines'}`,
+            label: 'Units',
+            value: `${summary.units} on ${summary.lines} ${summary.lines === 1 ? 'line' : 'lines'}`,
           },
           {
-            label: 'Going on',
+            label: 'Location',
             value: locationLabelFor(locationId),
           },
           ...(summary.newProducts > 0

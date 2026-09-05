@@ -47,28 +47,36 @@ export function ConfirmCommit({
       onClose={busy ? () => {} : onCancel}
       title={title}
       footer={
-        <div className="flex justify-end gap-3">
-          <Button variant="outline" className="h-12 px-6" onClick={onCancel} disabled={busy}>
-            Go back
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            Cancel
           </Button>
-          <Button className="h-12 px-6 text-base" onClick={onConfirm} loading={busy}>
+          <Button
+            className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
+            onClick={onConfirm}
+            loading={busy}
+          >
             {confirmLabel}
           </Button>
         </div>
       }
     >
-      <dl className="space-y-3">
+      {/* A docket, not a stack of coloured pills: label left, value right,
+          hairline between. Emphasis is the value going amber, nothing more. */}
+      <dl className="divide-y divide-slate-100 border-y border-slate-200">
         {facts.map((fact) => (
-          <div
-            key={fact.label}
-            className={`flex items-baseline justify-between gap-4 rounded-xl px-4 py-3 ${
-              fact.emphasis ? 'bg-amber-50' : 'bg-slate-50'
-            }`}
-          >
-            <dt className="text-sm text-slate-600">{fact.label}</dt>
+          <div key={fact.label} className="flex items-baseline justify-between gap-6 py-2.5">
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              {fact.label}
+            </dt>
             <dd
-              className={`text-right font-semibold ${
-                fact.emphasis ? 'text-lg text-amber-900' : 'text-slate-900'
+              className={`text-right text-sm font-semibold ${
+                fact.emphasis ? 'text-amber-700' : 'text-slate-900'
               }`}
             >
               {fact.value}
@@ -78,7 +86,7 @@ export function ConfirmCommit({
       </dl>
 
       {warning ? (
-        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p className="mt-3 border-l-2 border-amber-500 bg-amber-50/70 px-3 py-2 text-xs leading-relaxed text-amber-900">
           {warning}
         </p>
       ) : null}

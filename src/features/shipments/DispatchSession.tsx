@@ -258,88 +258,98 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   if (!reference) {
     return (
       <div className="flex min-h-screen flex-col">
-        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-5 py-4">
-          <p className="mr-auto text-lg font-bold text-slate-900">Dispatch a shipment</p>
-          <button
-            type="button"
-            onClick={toggleMute}
-            aria-pressed={muted}
-            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
-          >
-            {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-            {muted ? 'Sound off' : 'Sound on'}
-          </button>
-          <button
-            type="button"
-            onClick={onDone}
-            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
-          >
-            <X size={20} />
-            Finish
-          </button>
-        </header>
+        <header className="border-b border-slate-200 bg-white">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900">Outbound</h1>
+            <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              Dispatch
+            </span>
 
-        <div className="px-5 pb-2">
+            <button
+              type="button"
+              onClick={toggleMute}
+              aria-pressed={muted}
+              className="ml-auto flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
+            >
+              {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              {muted ? 'Sound off' : 'Sound on'}
+            </button>
+            <button
+              type="button"
+              onClick={onDone}
+              className="flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
+            >
+              <X size={16} />
+              Finish
+            </button>
+          </div>
+
           <StepRail
             current={1}
             steps={[
-              { label: 'Scan the label', hint: 'The sticker on the parcel' },
-              { label: 'Pick the goods' },
-              { label: 'Send it' },
+              { label: 'Label', hint: 'The reference on the parcel' },
+              { label: 'Pick items' },
+              { label: 'Dispatch' },
             ]}
           />
-        </div>
+        </header>
 
-        <div className="flex flex-1 items-center justify-center p-6">
-          <div className="w-full max-w-xl space-y-6 text-center">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                Scan the shipment label
-              </h1>
-              <p className="mt-2 text-lg text-slate-500">
-                Every shipment is identified by the label on the parcel. Nothing can
-                be picked until it is scanned.
-              </p>
-            </div>
+        <div className="flex flex-1 items-start justify-center bg-slate-50 p-6">
+          <div className="w-full max-w-lg border border-slate-200 bg-white p-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              Step 1 of 3
+            </p>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">
+              Shipment label
+            </h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
+              Scan or enter the reference on the parcel. Items cannot be picked until the
+              shipment has one, and each reference can be used only once.
+            </p>
 
             <form
               onSubmit={(e) => {
                 e.preventDefault()
                 void acceptReference(referenceDraft)
               }}
-              className="flex gap-3"
+              className="mt-4 flex gap-2"
             >
               <Input
                 value={referenceDraft}
                 onChange={(e) => setReferenceDraft(e.target.value)}
-                placeholder="Scan, or type the label"
+                placeholder="SHP-000123"
                 aria-label="Shipment label"
-                className="h-16 text-center text-xl font-semibold"
+                className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
                 loading={checkingReference}
                 autoFocus
               />
               <Button
                 type="submit"
-                className="h-16 px-8 text-base"
+                className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
                 disabled={!referenceDraft.trim()}
                 loading={checkingReference}
               >
-                Start
+                Continue
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 px-3 text-sm [@media(pointer:coarse)]:h-12"
+                onClick={() => setScannerOpen(true)}
+                aria-label="Use the camera"
+              >
+                <Camera size={16} />
               </Button>
             </form>
 
-            <Button
-              variant="outline"
-              className="h-14 px-6 text-base"
-              onClick={() => setScannerOpen(true)}
-            >
-              <Camera size={20} className="mr-2" />
-              Use the camera
-            </Button>
+            <p className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+              Scanner listening
+            </p>
 
             {error ? (
               <p
-                className="rounded-2xl border-2 border-rose-200 bg-rose-50 px-4 py-3 text-base text-rose-700"
+                className="mt-4 border border-slate-200 border-l-4 border-l-rose-600 bg-white px-4 py-3 text-sm text-rose-700"
                 role="alert"
               >
                 {error}
@@ -365,64 +375,91 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   /* ── Steps two and three ─────────────────────────────────────────────── */
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-white px-5 py-4">
-        <div className="flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Shipment
-          </p>
-          <p className="font-mono text-xl font-bold text-slate-900">{reference}</p>
+      <header className="border-b border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+          <h1 className="text-base font-semibold tracking-tight text-slate-900">Outbound</h1>
+          <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+            Dispatch
+          </span>
+
+          <Button
+            variant="secondary"
+            className="ml-auto h-9 px-3 text-[13px] [@media(pointer:coarse)]:h-11"
+            onClick={() => setScannerOpen(true)}
+          >
+            <ScanLine size={16} className="mr-1.5" />
+            Camera
+          </Button>
+          <button
+            type="button"
+            onClick={toggleMute}
+            aria-pressed={muted}
+            className="flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
+          >
+            {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            {muted ? 'Sound off' : 'Sound on'}
+          </button>
+          <button
+            type="button"
+            onClick={onDone}
+            className="flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
+          >
+            <X size={16} />
+            Finish
+          </button>
         </div>
 
-        {/* Settled by the goods, not chosen. Shown as fact, not as a control. */}
-        <div className="flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Client
-          </p>
-          <p className="text-xl font-semibold text-slate-900">
-            {clientName ?? (
-              <span className="text-slate-400">set by the first item</span>
-            )}
-          </p>
-        </div>
-
-        <Button variant="secondary" className="h-12 px-5" onClick={() => setScannerOpen(true)}>
-          <ScanLine size={20} className="mr-2" />
-          Scan
-        </Button>
-        <button
-          type="button"
-          onClick={toggleMute}
-          aria-pressed={muted}
-          className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
-        >
-          {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-          {muted ? 'Sound off' : 'Sound on'}
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
-        >
-          <X size={20} />
-          Finish
-        </button>
-      </header>
-
-      <div className="px-5 pt-4">
         <StepRail
           current={lines.length > 0 ? 3 : 2}
           steps={[
-            { label: 'Scan the label' },
-            { label: 'Pick the goods', hint: "The first item sets the client" },
-            { label: 'Send it', hint: 'Nothing leaves until you confirm' },
+            { label: 'Label' },
+            { label: 'Pick items', hint: 'The first item sets the client' },
+            { label: 'Dispatch', hint: 'Nothing moves until confirmed' },
           ]}
         />
-      </div>
 
-      <div className="flex-1 space-y-5 p-5">
+        {/* What this shipment is, as facts rather than controls: the reference
+            was scanned and the client is settled by the goods. */}
+        <dl className="flex flex-wrap items-end gap-x-8 gap-y-3 border-t border-slate-200 px-5 py-3">
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              Shipment
+            </dt>
+            <dd className="font-mono text-sm font-semibold leading-tight text-slate-900">
+              {reference}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              Client
+            </dt>
+            <dd className="text-sm font-semibold leading-tight text-slate-900">
+              {clientName ?? <span className="font-normal text-slate-400">set by first item</span>}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              Lines
+            </dt>
+            <dd className="text-sm font-semibold tabular-nums leading-tight text-slate-900">
+              {lines.length}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              Units
+            </dt>
+            <dd className="text-sm font-semibold tabular-nums leading-tight text-slate-900">
+              {units}
+            </dd>
+          </div>
+        </dl>
+      </header>
+
+      <div className="flex-1 space-y-4 bg-slate-50 p-5">
         <ScanPanel
           outcome={lastScan}
-          idleHint="Point the barcode gun at a product, or type the code in below."
+          idleHint="Scanner is live. A code can also be typed in below."
         />
 
         <form
@@ -430,21 +467,21 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
             e.preventDefault()
             void handleProductCode(manual)
           }}
-          className="flex gap-3"
+          className="flex gap-2"
         >
           <Input
             value={manual}
             onChange={(e) => setManual(e.target.value)}
-            placeholder="Scan or type a barcode or SKU"
+            placeholder="Barcode or SKU"
             aria-label="Barcode or SKU"
-            className="h-14 text-base"
+            className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
             loading={looking}
             autoFocus
           />
           <Button
             type="submit"
             variant="secondary"
-            className="h-14 px-6 text-base"
+            className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
             disabled={!manual.trim() || looking}
           >
             Add
@@ -453,120 +490,139 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
 
         {error ? (
           <div
-            className="rounded-2xl border-2 border-rose-200 bg-rose-50 px-4 py-3 text-base text-rose-700"
+            className="border border-slate-200 border-l-4 border-l-rose-600 bg-white px-4 py-3 text-sm text-rose-700"
             role="alert"
           >
             {error}
           </div>
         ) : null}
 
-        {lines.length === 0 ? (
-          <p className="rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 p-10 text-center text-lg text-slate-400">
-            Scan the first item. Whoever it belongs to becomes this shipment's client.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {lines.map((line, index) => (
-              <div
-                key={`${line.productId}:${line.locationId}`}
-                className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4"
-              >
-                <div className="min-w-[12rem] flex-1">
-                  <p className="text-lg font-semibold text-slate-900">{line.productName}</p>
-                  <p className="font-mono text-sm text-slate-500">
-                    {line.skuCode} · from {line.locationName}
-                  </p>
-                </div>
+        <div className="overflow-x-auto border border-slate-200 bg-white">
+          <table className="w-full min-w-[44rem] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+                <th scope="col" className="px-4 py-2 font-semibold">
+                  Item
+                </th>
+                <th scope="col" className="px-4 py-2 font-semibold">
+                  SKU
+                </th>
+                <th scope="col" className="px-4 py-2 font-semibold">
+                  From
+                </th>
+                <th scope="col" className="px-4 py-2 text-center font-semibold">
+                  Qty
+                </th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setLines((prev) =>
-                        setLineQuantity(prev, index, Math.max(1, line.quantity - 1)),
-                      )
-                    }
-                    aria-label={`One fewer ${line.productName}`}
-                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
-                  >
-                    <Minus size={20} />
-                  </button>
-                  <Input
-                    type="number"
-                    min="1"
-                    className="h-12 w-20 text-center text-lg font-bold"
-                    value={String(line.quantity)}
-                    aria-label={`Quantity of ${line.productName}`}
-                    onChange={(e) =>
-                      setLines((prev) => setLineQuantity(prev, index, Number(e.target.value)))
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setLines((prev) => setLineQuantity(prev, index, line.quantity + 1))
-                    }
-                    aria-label={`One more ${line.productName}`}
-                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
-                  >
-                    <Plus size={20} />
-                  </button>
-                </div>
+            <tbody className="divide-y divide-slate-100">
+              {lines.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">
+                    No items picked. The first item sets the client for this shipment.
+                  </td>
+                </tr>
+              ) : (
+                lines.map((line, index) => (
+                  <tr key={`${line.productId}:${line.locationId}`} className="align-middle">
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{line.productName}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{line.skuCode}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{line.locationName}</td>
 
-                <Button
-                  variant="outline"
-                  className="h-12 px-4"
-                  onClick={() => setLines((prev) => removeLineAt(prev, index))}
-                >
-                  Remove
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
+                    <td className="px-4 py-2.5">
+                      <div className="mx-auto flex w-fit items-center">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLines((prev) =>
+                              setLineQuantity(prev, index, Math.max(1, line.quantity - 1)),
+                            )
+                          }
+                          aria-label={`One fewer ${line.productName}`}
+                          className="flex size-8 items-center justify-center rounded-l-md border border-slate-300 text-slate-600 transition-colors hover:bg-slate-100 [@media(pointer:coarse)]:size-11"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <Input
+                          type="number"
+                          min="1"
+                          className="h-8 w-14 rounded-none border-x-0 text-center text-sm font-semibold tabular-nums [@media(pointer:coarse)]:h-11"
+                          value={String(line.quantity)}
+                          aria-label={`Quantity of ${line.productName}`}
+                          onChange={(e) =>
+                            setLines((prev) => setLineQuantity(prev, index, Number(e.target.value)))
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLines((prev) => setLineQuantity(prev, index, line.quantity + 1))
+                          }
+                          aria-label={`One more ${line.productName}`}
+                          className="flex size-8 items-center justify-center rounded-r-md border border-slate-300 text-slate-600 transition-colors hover:bg-slate-100 [@media(pointer:coarse)]:size-11"
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    </td>
 
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setLines((prev) => removeLineAt(prev, index))}
+                        className="rounded-md px-2 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-700 [@media(pointer:coarse)]:px-3 [@media(pointer:coarse)]:py-2.5"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <footer className="sticky bottom-0 space-y-3 border-t border-slate-200 bg-white px-5 py-4">
+      <footer className="sticky bottom-0 flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-slate-200 bg-white px-5 py-3">
         {/* Step three, offered once there is something to send. The courier
             issues this at collection, which is after the goods are picked. */}
         {lines.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="min-w-[16rem] flex-1 sm:max-w-sm">
             <label
               htmlFor="dispatch-tracking"
-              className="mb-2 block text-sm font-semibold text-slate-700"
+              className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500"
             >
-              Tracking number <span className="font-normal text-slate-400">(optional)</span>
+              Tracking number <span className="font-normal normal-case">(optional)</span>
             </label>
             <Input
               id="dispatch-tracking"
               value={trackingId}
               onChange={(e) => setTrackingId(e.target.value)}
-              placeholder="Scan or type the courier's number"
-              className="h-14 text-base"
+              placeholder="Courier reference"
+              className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
             />
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-2xl font-bold tabular-nums text-slate-900">
-            {units} {units === 1 ? 'unit' : 'units'}
-          </p>
-          <p className="text-sm text-slate-500">
-            {lines.length} {lines.length === 1 ? 'line' : 'lines'}
-            {clientName ? ` · ${clientName}` : ''}
-          </p>
-        </div>
+        <p className="ml-auto text-sm text-slate-600">
+          <span className="font-semibold tabular-nums text-slate-900">{units}</span>{' '}
+          {units === 1 ? 'unit' : 'units'} on{' '}
+          <span className="font-semibold tabular-nums text-slate-900">{lines.length}</span>{' '}
+          {lines.length === 1 ? 'line' : 'lines'}
+        </p>
+
         <Button
-          className="h-14 px-8 text-base"
+          className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
           onClick={() => setConfirming(true)}
           disabled={lines.length === 0}
           loading={saving}
         >
-          {saving ? 'Sending…' : 'Send this shipment'}
+          {saving ? 'Dispatching…' : 'Dispatch shipment'}
         </Button>
-        </div>
       </footer>
 
       {/* Which bins to draw from. Outbound must come off shelves that actually
@@ -593,19 +649,22 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
 
       <ConfirmCommit
         open={confirming}
-        title="Send this shipment?"
-        confirmLabel="Yes, send it"
+        title="Confirm dispatch"
+        confirmLabel="Dispatch"
         busy={saving}
-        warning="The stock leaves the shelf and the client is charged. Use a return if something comes back."
+        warning="Stock is deducted and the client is charged on confirmation. Use a return to reverse an item."
         onCancel={() => setConfirming(false)}
         onConfirm={() => void dispatch()}
         facts={[
           { label: 'Shipment', value: reference },
           { label: 'Client', value: clientName ?? 'unknown' },
-          { label: 'Goods', value: `${units} ${units === 1 ? 'unit' : 'units'} across ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}` },
           {
-            label: 'Tracking number',
-            value: trackingId.trim() || 'not added yet',
+            label: 'Goods',
+            value: `${units} ${units === 1 ? 'unit' : 'units'} on ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`,
+          },
+          {
+            label: 'Tracking',
+            value: trackingId.trim() || 'not recorded',
             emphasis: !trackingId.trim(),
           },
         ]}
@@ -658,60 +717,82 @@ function BinSplit({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-6">
-      <div className="w-full max-w-lg space-y-5 rounded-3xl bg-white p-6">
-        <div>
-          <p className="text-xl font-bold text-slate-900">{match.productName}</p>
-          <p className="font-mono text-sm text-slate-500">{match.skuCode}</p>
-          <p className="mt-2 text-slate-600">
-            Held in {bins.length} bins. Say how many come out of each.
+      <div className="w-full max-w-md border border-slate-200 bg-white shadow-xl">
+        <div className="border-b border-slate-200 px-5 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+            Stock held in {bins.length} locations
           </p>
+          <p className="mt-0.5 text-base font-semibold text-slate-900">{match.productName}</p>
+          <p className="font-mono text-xs text-slate-500">{match.skuCode}</p>
         </div>
 
-        <div className="space-y-3">
-          {bins.map((bin) => (
-            <div key={bin.locationId} className="flex items-center gap-4">
-              <div className="flex-1">
-                <p className="font-medium text-slate-800">{bin.locationName}</p>
-                <p className="text-sm text-slate-500">
-                  {availableIn(bin)} available
-                </p>
-              </div>
-              <Input
-                type="number"
-                min="0"
-                max={String(availableIn(bin))}
-                className="h-12 w-24 text-center text-lg font-bold"
-                aria-label={`Take from ${bin.locationName}`}
-                value={String(quantities[bin.locationId] ?? '')}
-                onChange={(e) =>
-                  setQuantities((prev) => ({
-                    ...prev,
-                    [bin.locationId]: Number(e.target.value),
-                  }))
-                }
-              />
-            </div>
-          ))}
-        </div>
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              <th scope="col" className="px-5 py-2 font-semibold">
+                Location
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-semibold">
+                Available
+              </th>
+              <th scope="col" className="px-5 py-2 text-right font-semibold">
+                Take
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {bins.map((bin) => (
+              <tr key={bin.locationId}>
+                <td className="px-5 py-2 font-medium text-slate-800">{bin.locationName}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-slate-500">
+                  {availableIn(bin)}
+                </td>
+                <td className="px-5 py-2 text-right">
+                  <Input
+                    type="number"
+                    min="0"
+                    max={String(availableIn(bin))}
+                    className="h-9 w-20 text-center text-sm font-semibold tabular-nums [@media(pointer:coarse)]:h-11"
+                    aria-label={`Take from ${bin.locationName}`}
+                    value={String(quantities[bin.locationId] ?? '')}
+                    onChange={(e) =>
+                      setQuantities((prev) => ({
+                        ...prev,
+                        [bin.locationId]: Number(e.target.value),
+                      }))
+                    }
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
         {problems.length > 0 ? (
-          <ul className="space-y-1 rounded-2xl bg-rose-50 px-4 py-3 text-base text-rose-700" role="alert">
+          <ul
+            className="space-y-1 border-t border-slate-200 border-l-4 border-l-rose-600 px-5 py-3 text-[13px] text-rose-700"
+            role="alert"
+          >
             {problems.map((p) => (
               <li key={p.locationId}>{p.message}</li>
             ))}
           </ul>
         ) : null}
 
-        <div className="flex gap-3">
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
           <Button
-            className="h-14 flex-1 text-base"
+            variant="outline"
+            className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
             disabled={problems.length > 0 || total === 0}
             onClick={() => onPicked(toPickLines(match, bins, quantities))}
           >
-            Take {total || ''}
-          </Button>
-          <Button variant="outline" className="h-14 px-6 text-base" onClick={onCancel}>
-            Cancel
+            Add {total || ''}
           </Button>
         </div>
       </div>
