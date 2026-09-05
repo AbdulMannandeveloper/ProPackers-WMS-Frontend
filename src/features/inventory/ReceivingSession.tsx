@@ -5,6 +5,9 @@ import { inventory as inventoryApi, products as productsApi } from '@/api'
 import type { Product } from '@/api/products'
 import { Button, Input, Select, Spinner } from '@/components/Shared Components'
 import { BarcodeScanner, createWedgeListener } from '@/components/scanner'
+import { ConfirmCommit } from '@/features/scanning/ConfirmCommit'
+import { ScanPanel, type ScanOutcome } from '@/features/scanning/ScanPanel'
+import { StepRail } from '@/features/scanning/StepRail'
 import { useDefaultSelection } from '@/hooks/useDefaultSelection'
 import { errorMessage } from '@/lib/errors'
 import { isMuted, setMuted, signal } from '@/lib/feedback'
@@ -71,7 +74,6 @@ const EMPTY_DRAFT = (clientId: string, barcode: string): NewProductDraft => ({
   barcode: barcode || null,
 })
 
-type LastScan = { name: string; sku: string; quantity: number; tone: 'ok' | 'attention' }
 
 export function ReceivingSession({
   locations,
@@ -87,8 +89,9 @@ export function ReceivingSession({
   const [looking, setLooking] = useState(false)
   const [error, setError] = useState('')
   const [committing, setCommitting] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [muted, setMutedState] = useState(isMuted)
-  const [lastScan, setLastScan] = useState<LastScan | null>(null)
+  const [lastScan, setLastScan] = useState<ScanOutcome | null>(null)
 
   const [draft, setDraft] = useState<NewProductDraft | null>(null)
   const [draftExtras, setDraftExtras] = useState(false)
@@ -100,6 +103,11 @@ export function ReceivingSession({
   // renders the first one, so an empty state behind a filled-looking dropdown
   // gets the delivery refused with nothing on screen to explain it.
   useDefaultSelection(locationId, setLocationId, locations)
+
+  const locationLabelFor = (id: string) => {
+    const found = locations.find((l) => l.id === id)
+    return found ? locationLabel(found) : 'no shelf chosen'
+  }
 
   const summary = useMemo(() => totals(lines), [lines])
   const blocker = useMemo(
@@ -128,10 +136,10 @@ export function ReceivingSession({
         prev.map((l) => (l.key === known.key ? { ...l, quantity: next } : l)),
       )
       setLastScan({
-        name: isNewLine(known) ? known.draft.productName : known.productName,
-        sku: isNewLine(known) ? known.draft.skuCode : known.skuCode,
-        quantity: next,
         tone: 'ok',
+        title: isNewLine(known) ? known.draft.productName : known.productName,
+        detail: isNewLine(known) ? known.draft.skuCode : known.skuCode,
+        count: next,
       })
       signal('accepted')
       return
@@ -146,10 +154,10 @@ export function ReceivingSession({
         setLines((prev) => addScannedProduct(prev, product))
         lastClientId.current = product.clientId || lastClientId.current
         setLastScan({
-          name: product.productName,
-          sku: product.skuCode,
-          quantity: 1,
           tone: 'ok',
+          title: product.productName,
+          detail: product.skuCode,
+          count: 1,
         })
         signal('accepted')
         return
@@ -161,6 +169,11 @@ export function ReceivingSession({
         setError(
           `${code} matches ${matches.length} products across different clients. Add it from the Products tab instead.`,
         )
+        setLastScan({
+          tone: 'refused',
+          title: 'Which client is this?',
+          detail: `${code} belongs to ${matches.length} different clients`,
+        })
         signal('refused')
         return
       }
@@ -182,7 +195,11 @@ export function ReceivingSession({
   const openDraftFor = (code: string) => {
     setDraft(EMPTY_DRAFT(lastClientId.current || clients[0]?.id || '', code))
     setDraftError('')
-    setLastScan({ name: 'Not in the catalogue', sku: code, quantity: 0, tone: 'attention' })
+    setLastScan({
+      tone: 'attention',
+      title: 'Not in the catalogue yet',
+      detail: `${code} — tell us what it is below`,
+    })
     signal('attention')
   }
 
@@ -228,10 +245,10 @@ export function ReceivingSession({
     setLines((prev) => addNewProductLine(prev, draft))
     lastClientId.current = draft.clientId
     setLastScan({
-      name: draft.productName,
-      sku: draft.skuCode,
-      quantity: 1,
       tone: 'ok',
+      title: draft.productName,
+      detail: `${draft.skuCode} — new product, created when you finish`,
+      count: 1,
     })
     signal('accepted')
     setDraft(null)
@@ -241,6 +258,7 @@ export function ReceivingSession({
 
   const commit = async () => {
     if (blocker || committing) return
+    setConfirming(false)
 
     setCommitting(true)
     setError('')
@@ -399,13 +417,52 @@ export function ReceivingSession({
   /* ── The bench ────────────────────────────────────────────────────────── */
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-white px-5 py-4">
-        <div className="min-w-[16rem] flex-1">
+      <header className="border-b border-slate-200 bg-white px-5 py-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Receive stock</h1>
+            <p className="text-sm text-slate-500">Booking a delivery onto the shelf.</p>
+          </div>
+
+          {/* Labelled, not bare icons: nobody guesses what a speaker glyph
+              does on a warehouse screen. */}
+          <button
+            type="button"
+            onClick={toggleMute}
+            aria-pressed={muted}
+            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            {muted ? 'Sound off' : 'Sound on'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onDone}
+            className="flex h-12 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            <X size={20} />
+            Finish
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <StepRail
+            current={lines.length > 0 ? 3 : 2}
+            steps={[
+              { label: 'Choose the shelf' },
+              { label: 'Scan the goods', hint: 'Every scan adds one' },
+              { label: 'Check and confirm', hint: 'Nothing is saved yet' },
+            ]}
+          />
+        </div>
+
+        <div className="mt-4 max-w-md">
           <label
             htmlFor="receiving-location"
             className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500"
           >
-            Receiving into
+            Putting it on
           </label>
           <Select
             id="receiving-location"
@@ -421,59 +478,14 @@ export function ReceivingSession({
             ))}
           </Select>
         </div>
-
-        <button
-          type="button"
-          onClick={toggleMute}
-          aria-label={muted ? 'Turn scan sounds on' : 'Turn scan sounds off'}
-          aria-pressed={muted}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
-        >
-          {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
-        </button>
-
-        <button
-          type="button"
-          onClick={onDone}
-          aria-label="Close receiving"
-          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
-        >
-          <X size={22} />
-        </button>
       </header>
 
       <div className="flex-1 space-y-5 p-5">
-        {/* What just happened, as the largest thing on the page. */}
-        <div
-          className={`rounded-3xl border-2 p-6 transition-colors ${
-            lastScan?.tone === 'attention'
-              ? 'border-amber-300 bg-amber-50'
-              : lastScan
-                ? 'border-emerald-300 bg-emerald-50'
-                : 'border-dashed border-slate-200 bg-slate-50'
-          }`}
-          aria-live="polite"
-        >
-          {lastScan ? (
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="truncate text-3xl font-bold tracking-tight text-slate-900">
-                  {lastScan.name}
-                </p>
-                <p className="mt-1 font-mono text-base text-slate-600">{lastScan.sku}</p>
-              </div>
-              {lastScan.quantity > 0 ? (
-                <p className="shrink-0 text-5xl font-black tabular-nums text-slate-900">
-                  ×{lastScan.quantity}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-center text-lg text-slate-400">
-              Scan a barcode to begin. Scanning the same item again adds one more.
-            </p>
-          )}
-        </div>
+        {/* Says the gun is live, then becomes the confirmation. */}
+        <ScanPanel
+          outcome={lastScan}
+          idleHint="Point the barcode gun at a label, or type the code in below. Scanning the same item again adds one more."
+        />
 
         {/* Typing and the camera, for a damaged label or a tablet. The gun
             needs nothing here — it is heard wherever the cursor is. */}
@@ -609,13 +621,41 @@ export function ReceivingSession({
         </div>
         <Button
           className="h-14 px-8 text-base"
-          onClick={() => void commit()}
+          onClick={() => setConfirming(true)}
           disabled={Boolean(blocker)}
           loading={committing}
         >
-          {committing ? 'Checking in…' : 'Check all in'}
+          {committing ? 'Putting it away…' : 'Put it on the shelf'}
         </Button>
       </footer>
+
+      <ConfirmCommit
+        open={confirming}
+        title="Put this delivery on the shelf?"
+        confirmLabel="Yes, put it away"
+        busy={committing}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void commit()}
+        facts={[
+          {
+            label: 'Items',
+            value: `${summary.units} across ${summary.lines} ${summary.lines === 1 ? 'line' : 'lines'}`,
+          },
+          {
+            label: 'Going on',
+            value: locationLabelFor(locationId),
+          },
+          ...(summary.newProducts > 0
+            ? [
+                {
+                  label: 'New products',
+                  value: `${summary.newProducts} will be created`,
+                  emphasis: true,
+                },
+              ]
+            : []),
+        ]}
+      />
 
       <BarcodeScanner
         open={scannerOpen}

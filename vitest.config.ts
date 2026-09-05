@@ -31,10 +31,13 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     // The page tests render large screens into jsdom and drive them through
-    // userEvent, which is slow under load: the shipments load test has flaked
-    // twice at the 5s default, and the inventory page needs more than that
-    // whenever the whole suite runs together. Raised so a green run means the
-    // behaviour is right rather than that the machine happened to be idle.
-    testTimeout: 20_000,
+    // userEvent, which is slow under load. The inventory page is the worst of
+    // them: 11s on its own, 22s when the whole suite is competing for the
+    // machine — so it failed at 20s while passing in isolation, which is the
+    // least useful kind of red.
+    //
+    // Raised rather than chased, because the alternative is a suite that is
+    // green or red depending on what else the laptop is doing.
+    testTimeout: 30_000,
   },
 })
