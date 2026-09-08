@@ -107,7 +107,7 @@ export default function ClientLoginPage() {
       tabs={showOtp ? undefined : <AuthRoleTabs />}
       footer={
         <p className="auth-footer__note">
-          Your account is created by ProPackers. Contact us if you need access.
+          Your account is created by Pro Packers UK. Contact us if you need access.
         </p>
       }
     >

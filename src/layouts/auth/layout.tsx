@@ -21,7 +21,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             <img src="/Logo.png" alt="" className="h-9 w-9 object-contain" />
           </div>
           <div>
-            <div className="auth-masthead__title">ProPackers</div>
+            <div className="auth-masthead__title">Pro Packers UK</div>
             <div className="auth-masthead__sub">Warehouse Management</div>
           </div>
         </header>
@@ -29,7 +29,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         {children}
 
         <footer className="auth-colophon">
-          <span>© {new Date().getFullYear()} ProPackers UK</span>
+          <span>© {new Date().getFullYear()} Pro Packers UK</span>
           <span aria-hidden="true">·</span>
           <a href="mailto:support@nayoram.com" className="auth-link auth-link--quiet">
             Support

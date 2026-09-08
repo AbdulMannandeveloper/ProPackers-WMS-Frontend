@@ -598,7 +598,7 @@ export default function InventoryPage() {
 
     doc.setFontSize(18)
     doc.setTextColor(15, 23, 42)
-    doc.text('ProPackers WMS — Inventory Ledger Report', 14, 20)
+    doc.text('Pro Packers UK — Inventory Ledger Report', 14, 20)
 
     doc.setFontSize(10)
     doc.setTextColor(100, 116, 139)
@@ -641,7 +641,7 @@ export default function InventoryPage() {
     doc.setTextColor(15, 23, 42)
     doc.text(`Summary — Total Inbound: ${totalIn} units | Total Outbound: ${totalOut} units | Internal Moves: ${totalMoves} units`, 14, finalY + 10)
 
-    doc.save(`ProPackers_Ledger_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+    doc.save(`Pro_Packers_UK_Ledger_Report_${new Date().toISOString().split('T')[0]}.pdf`)
     showToast('PDF report generated and downloaded.')
   }
 

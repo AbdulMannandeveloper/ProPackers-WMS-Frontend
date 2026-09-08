@@ -102,7 +102,7 @@ export default function PLPage() {
     // Title / Logo branding
     doc.setFontSize(22)
     doc.setTextColor(15, 23, 42)
-    doc.text('ProPackers UK', 14, 25)
+    doc.text('Pro Packers UK', 14, 25)
     doc.setFontSize(10)
     doc.setTextColor(100, 116, 139)
     doc.text('Warehouse Management Platform', 14, 30)
@@ -161,7 +161,7 @@ export default function PLPage() {
       styles: { cellPadding: 4, fontSize: 10 },
     })
 
-    doc.save(`ProPackers_PL_Report_${selectedMonthLabel.replace(' ', '_')}.pdf`)
+    doc.save(`Pro_Packers_UK_PL_Report_${selectedMonthLabel.replace(' ', '_')}.pdf`)
   }
 
   const selectedMonthLabel = useMemo(() => {

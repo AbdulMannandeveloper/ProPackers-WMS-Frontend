@@ -181,9 +181,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <div className="flex h-16 items-center justify-between border-b border-sidebar-border/80 px-4">
               <div className="flex items-center gap-3">
                 <div className="dashboard-brand-mark shrink-0">
-                  <img src="/Logo.png" alt="ProPackers logo" className="h-8 w-8 object-contain" />
+                  <img src="/Logo.png" alt="Pro Packers UK logo" className="h-8 w-8 object-contain" />
                 </div>
-                <span className="font-semibold">ProPackers UK</span>
+                <span className="font-semibold">Pro Packers UK</span>
               </div>
               <button
                 type="button"
@@ -232,11 +232,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border/80 px-4 flex-shrink-0">
           <div className={`flex items-center gap-3 overflow-hidden ${isCollapsed ? 'justify-center w-full' : ''}`}>
             <div className="dashboard-brand-mark shrink-0">
-              <img src="/Logo.png" alt="ProPackers logo" className="h-8 w-8 object-contain" />
+              <img src="/Logo.png" alt="Pro Packers UK logo" className="h-8 w-8 object-contain" />
             </div>
             {!isCollapsed && (
               <div className="min-w-0 shrink-0">
-                <div className="text-sm font-semibold tracking-tight text-white whitespace-nowrap">ProPackers UK</div>
+                <div className="text-sm font-semibold tracking-tight text-white whitespace-nowrap">Pro Packers UK</div>
               </div>
             )}
           </div>

@@ -10,7 +10,11 @@
  * can be tested without mounting a router.
  */
 
-export const BRAND = 'ProPackers UK'
+/**
+ * Two words, as the business writes it — and as its invoices already did
+ * (utils/invoiceIdentity.js on the server). The app was the odd one out.
+ */
+export const BRAND = 'Pro Packers UK'
 
 const SEPARATOR = ' · '
 
