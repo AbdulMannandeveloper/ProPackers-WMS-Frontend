@@ -64,6 +64,17 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [trackingId, setTrackingId] = useState('')
 
+  /**
+   * Which of the last three steps is on screen. (The first, the label, is the
+   * `reference` gate above — nothing here is reachable without it.)
+   *
+   * Tracking used to be a field in the footer, beside the Dispatch button. Next
+   * to the thing the operator came to press it read as decoration, and it was
+   * being skipped: the courier's number is the one part of a shipment a client
+   * later rings about, and it was the easiest part to miss.
+   */
+  const [stage, setStage] = useState<'picking' | 'tracking' | 'dispatch'>('picking')
+
   const [error, setError] = useState('')
   const [muted, setMutedState] = useState(isMuted)
   const [saving, setSaving] = useState(false)
@@ -223,7 +234,13 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   const routeRef = useRef<(code: string) => void>(() => {})
   routeRef.current = (code: string) => {
     if (!reference) void acceptReference(code)
-    else void handleProductCode(code)
+    // On the tracking step the gun is pointed at the courier's label, not at a
+    // product. Sending it to the product lookup would refuse a code that is
+    // exactly what the operator meant to enter.
+    else if (stage === 'tracking') {
+      setTrackingId(code.trim())
+      signal('accepted')
+    } else void handleProductCode(code)
   }
 
   useEffect(() => {
@@ -246,6 +263,8 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
       setReference(null)
       setLines([])
       setTrackingId('')
+      setLastScan(null)
+      setStage('picking')
     } catch (err) {
       setError(errorMessage(err, 'Could not dispatch this shipment.'))
       signal('refused')
@@ -289,6 +308,7 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
             steps={[
               { label: 'Label', hint: 'The reference on the parcel' },
               { label: 'Pick items' },
+              { label: 'Tracking' },
               { label: 'Dispatch' },
             ]}
           />
@@ -410,10 +430,11 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         </div>
 
         <StepRail
-          current={lines.length > 0 ? 3 : 2}
+          current={stage === 'picking' ? 2 : stage === 'tracking' ? 3 : 4}
           steps={[
             { label: 'Label' },
             { label: 'Pick items', hint: 'The first item sets the client' },
+            { label: 'Tracking', hint: 'The courier’s number — optional' },
             { label: 'Dispatch', hint: 'Nothing moves until confirmed' },
           ]}
         />
@@ -456,37 +477,113 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         </dl>
       </header>
 
-      <div className="flex-1 space-y-4 bg-slate-50 p-5">
-        <ScanPanel
-          outcome={lastScan}
-          idleHint="Scanner is live. A code can also be typed in below."
-        />
+      {/* ── Step three: the courier's number ──────────────────────────────
+          Its own screen, because as a field in the footer it sat beside the
+          Dispatch button and was read as decoration. Skipping is still one
+          press — the point is that it is now a press, not an omission. */}
+      {stage === 'tracking' ? (
+        <div className="flex flex-1 items-start justify-center bg-slate-50 p-6">
+          <div className="w-full max-w-lg border border-slate-200 bg-white p-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+              Step 3 of 4
+            </p>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">
+              Tracking number
+            </h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
+              The consignment number the courier gave you for{' '}
+              <span className="font-mono font-semibold text-slate-900">{reference}</span>. It
+              is what {clientName ?? 'the client'} will quote when they ask where the order
+              is. Add it now if you have it.
+            </p>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            void handleProductCode(manual)
-          }}
-          className="flex gap-2"
-        >
-          <Input
-            value={manual}
-            onChange={(e) => setManual(e.target.value)}
-            placeholder="Barcode or SKU"
-            aria-label="Barcode or SKU"
-            className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
-            loading={looking}
-            autoFocus
-          />
-          <Button
-            type="submit"
-            variant="secondary"
-            className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
-            disabled={!manual.trim() || looking}
-          >
-            Add
-          </Button>
-        </form>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                setStage('dispatch')
+              }}
+              className="mt-4 flex gap-2"
+            >
+              <Input
+                id="dispatch-tracking"
+                value={trackingId}
+                onChange={(e) => setTrackingId(e.target.value)}
+                placeholder="Courier reference"
+                aria-label="Tracking number"
+                className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
+                autoFocus
+              />
+              <Button
+                type="submit"
+                className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
+                disabled={!trackingId.trim()}
+              >
+                Save and continue
+              </Button>
+            </form>
+
+            <p className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+              Scanner listening
+            </p>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
+              <Button
+                variant="outline"
+                className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+                onClick={() => setStage('picking')}
+              >
+                Back to the goods
+              </Button>
+              <Button
+                variant="ghost"
+                className="ml-auto h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+                onClick={() => {
+                  setTrackingId('')
+                  setStage('dispatch')
+                }}
+              >
+                Skip — no number yet
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+      <div className="flex-1 space-y-4 bg-slate-50 p-5">
+        {stage === 'picking' ? (
+          <>
+            <ScanPanel
+              outcome={lastScan}
+              idleHint="Scanner is live. A code can also be typed in below."
+            />
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void handleProductCode(manual)
+              }}
+              className="flex gap-2"
+            >
+              <Input
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+                placeholder="Barcode or SKU"
+                aria-label="Barcode or SKU"
+                className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
+                loading={looking}
+                autoFocus
+              />
+              <Button
+                type="submit"
+                variant="secondary"
+                className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+                disabled={!manual.trim() || looking}
+              >
+                Add
+              </Button>
+            </form>
+          </>
+        ) : null}
 
         {error ? (
           <div
@@ -586,44 +683,60 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
           </table>
         </div>
       </div>
+      )}
 
-      <footer className="sticky bottom-0 flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-slate-200 bg-white px-5 py-3">
-        {/* Step three, offered once there is something to send. The courier
-            issues this at collection, which is after the goods are picked. */}
-        {lines.length > 0 ? (
-          <div className="min-w-[16rem] flex-1 sm:max-w-sm">
-            <label
-              htmlFor="dispatch-tracking"
-              className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500"
+      {stage === 'tracking' ? null : (
+        <footer className="sticky bottom-0 flex flex-wrap items-center gap-x-4 gap-y-3 border-t border-slate-200 bg-white px-5 py-3">
+          {stage === 'dispatch' ? (
+            <Button
+              variant="outline"
+              className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+              onClick={() => setStage('tracking')}
+              disabled={saving}
             >
-              Tracking number <span className="font-normal normal-case">(optional)</span>
-            </label>
-            <Input
-              id="dispatch-tracking"
-              value={trackingId}
-              onChange={(e) => setTrackingId(e.target.value)}
-              placeholder="Courier reference"
-              className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
-            />
-          </div>
-        ) : null}
+              Back
+            </Button>
+          ) : null}
 
-        <p className="ml-auto text-sm text-slate-600">
-          <span className="font-semibold tabular-nums text-slate-900">{units}</span>{' '}
-          {units === 1 ? 'unit' : 'units'} on{' '}
-          <span className="font-semibold tabular-nums text-slate-900">{lines.length}</span>{' '}
-          {lines.length === 1 ? 'line' : 'lines'}
-        </p>
+          <p className="ml-auto text-sm text-slate-600">
+            <span className="font-semibold tabular-nums text-slate-900">{units}</span>{' '}
+            {units === 1 ? 'unit' : 'units'} on{' '}
+            <span className="font-semibold tabular-nums text-slate-900">{lines.length}</span>{' '}
+            {lines.length === 1 ? 'line' : 'lines'}
+            {/* Shown here from step four on, so a skipped number is visible
+                without opening the confirmation. */}
+            {stage === 'dispatch' ? (
+              <>
+                {' · '}
+                {trackingId.trim() ? (
+                  <span className="font-mono text-slate-900">{trackingId.trim()}</span>
+                ) : (
+                  <span className="text-amber-700">no tracking number</span>
+                )}
+              </>
+            ) : null}
+          </p>
 
-        <Button
-          className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
-          onClick={() => setConfirming(true)}
-          disabled={lines.length === 0}
-          loading={saving}
-        >
-          {saving ? 'Dispatching…' : 'Dispatch shipment'}
-        </Button>
-      </footer>
+          {stage === 'picking' ? (
+            <Button
+              className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
+              onClick={() => setStage('tracking')}
+              disabled={lines.length === 0}
+            >
+              Continue
+            </Button>
+          ) : (
+            <Button
+              className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
+              onClick={() => setConfirming(true)}
+              disabled={lines.length === 0}
+              loading={saving}
+            >
+              {saving ? 'Dispatching…' : 'Dispatch shipment'}
+            </Button>
+          )}
+        </footer>
+      )}
 
       {/* Which bins to draw from. Outbound must come off shelves that actually
           hold the stock, so this stays a decision even at speed — but it is

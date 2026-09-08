@@ -339,10 +339,22 @@ export default function ShipmentsPage() {
   const dispatchedCount = useMemo(() => shipments.filter((s) => s.status === 'DISPATCHED').length, [shipments])
   const cancelledCount = useMemo(() => shipments.filter((s) => s.status === 'CANCELLED').length, [shipments])
 
-  // Helper to map employee name
-  const getEmployeeName = (emp?: any | null) => {
-    if (!emp || !emp.user) return 'Unassigned'
-    return `${emp.user.firstName} ${emp.user.lastName}`
+  /**
+   * Who made the shipment.
+   *
+   * `createdBy` is the session user, which is the honest answer: an admin
+   * dispatching a parcel did the work whether or not they are on the payroll.
+   * The employee fallback is for rows written before creators were recorded —
+   * those genuinely only know the operator they were booked against.
+   *
+   * This used to read the employee alone, so an admin's own shipments came back
+   * either blank or under somebody else's name.
+   */
+  const getCreatorName = (s: Shipment) => {
+    if (s.createdBy) return `${s.createdBy.firstName} ${s.createdBy.lastName}`
+    const legacy = (s as any).employee
+    if (legacy?.user) return `${legacy.user.firstName} ${legacy.user.lastName}`
+    return 'Unknown'
   }
 
   return (
@@ -412,7 +424,7 @@ export default function ShipmentsPage() {
                   <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
                     <th className="pb-3 font-semibold">Shipment Ref</th>
                     <th className="pb-3 font-semibold">Client Company</th>
-                    <th className="pb-3 font-semibold">Assigned Operator</th>
+                    <th className="pb-3 font-semibold">Created By</th>
                     <th className="pb-3 font-semibold">Tracking</th>
                     <th className="pb-3 font-semibold text-center">Items Count</th>
                     <th className="pb-3 font-semibold">Created On</th>
@@ -441,7 +453,7 @@ export default function ShipmentsPage() {
                           {s.client?.companyName || '—'}
                         </td>
                         <td className="py-4 text-slate-600 dark:text-slate-400">
-                          {getEmployeeName(s.employee)}
+                          {getCreatorName(s)}
                         </td>
                         {/* Courier and packaging were dropped from the schema in
                             Phase 20, so this column printed two blanks around
@@ -563,8 +575,8 @@ export default function ShipmentsPage() {
                 <strong className="text-slate-700 dark:text-slate-200">{selectedShipment.client?.companyName}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Assigned Operator</span>
-                <strong className="text-slate-700 dark:text-slate-200">{getEmployeeName(selectedShipment.employee)}</strong>
+                <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Created By</span>
+                <strong className="text-slate-700 dark:text-slate-200">{getCreatorName(selectedShipment)}</strong>
               </div>
               <div>
                 <span className="text-slate-400 block text-xs uppercase tracking-wider font-semibold">Shipment Ref</span>

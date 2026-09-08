@@ -41,6 +41,7 @@ const shipment = (overrides = {}) => ({
   trackingId: null,
   createdAt: '2026-09-01T10:00:00.000Z',
   client: { id: 'c1', companyName: 'Acme Ltd', contactName: 'Jo', email: 'jo@acme.test' },
+  createdBy: { id: 'u1', firstName: 'Abdul', lastName: 'Mannan', email: 'a@propackers.test' },
   shipmentItems: [],
   ...overrides,
 })
@@ -74,6 +75,28 @@ describe('the shipments table', () => {
     // Both the full uuid and the eight-character slice this used to render.
     expect(screen.queryByText(/aaaaaaaa/i)).toBeNull()
     expect(document.body.textContent).not.toMatch(/AAAAAAAA/)
+  })
+
+  it('names whoever made the shipment', async () => {
+    // It used to read the Employee relation, which is null for an admin — so
+    // the person who actually did the work appeared as "Unassigned", or, on an
+    // older row, as whichever employee it had been booked against.
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Abdul Mannan')).toBeTruthy())
+    expect(screen.getByText('Created By')).toBeTruthy()
+  })
+
+  it('falls back to the employee on a row written before creators were kept', async () => {
+    getAllShipments.mockResolvedValue([
+      shipment({
+        createdBy: null,
+        employee: { id: 'e1', user: { firstName: 'Daniel', lastName: 'Hughes' } },
+      }),
+    ])
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Daniel Hughes')).toBeTruthy())
   })
 
   it('names the label in the cancel confirmation', async () => {
