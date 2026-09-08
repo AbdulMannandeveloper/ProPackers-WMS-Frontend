@@ -178,7 +178,45 @@ export default function InventoryPage() {
   useDefaultSelection(clientId, setClientId, clients, !selectedProduct)
   useDefaultSelection(openingLocationId, setOpeningLocationId, locations)
   useDefaultSelection(adjustToLocationId, setAdjustToLocationId, locations)
-  useDefaultSelection(adjustFromLocationId, setAdjustFromLocationId, locations)
+
+  /**
+   * The bins that actually hold the product being adjusted, with what can be
+   * taken from each.
+   *
+   * The source dropdown used to list every location in the building, with no
+   * figures. Picking one that held none of this product — most of them, most of
+   * the time — produced "that is more than the available stock at this
+   * location" and nothing on screen said where the stock was instead. The list
+   * is the answer to that question, so it may as well be the list.
+   *
+   * Available, not on-hand: units reserved for a shipment cannot be moved or
+   * written off, and offering them would only produce the same refusal further
+   * down.
+   */
+  const sourceBins = useMemo(() => {
+    if (!adjustProductId) return []
+    return stockLevels
+      .filter((sl) => sl.productId === adjustProductId)
+      .map((sl) => ({
+        id: sl.locationId,
+        available: sl.currentQuantity - sl.reservedQuantity,
+        label: locations.find((l) => l.id === sl.locationId)?.locationName ?? 'Unknown location',
+      }))
+      .filter((bin) => bin.available > 0)
+      .sort((a, b) => b.available - a.available)
+  }, [adjustProductId, stockLevels, locations])
+
+  const availableHere =
+    sourceBins.find((bin) => bin.id === adjustFromLocationId)?.available ?? 0
+
+  /** Movements that take units out of a specific bin, and so need one chosen. */
+  const takesFromABin =
+    adjustMovementType === 'CHECKOUT' ||
+    adjustMovementType === 'INTERNAL_MOVE' ||
+    adjustMovementType === 'ADJUSTMENT'
+
+  // Seeded from the bins that can actually supply it, not from every location.
+  useDefaultSelection(adjustFromLocationId, setAdjustFromLocationId, sourceBins)
 
   // Save/Edit Product
   const handleOpenAddProduct = () => {
@@ -1857,22 +1895,22 @@ export default function InventoryPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Logistics Movement Type *
+              <label htmlFor="adjust-movement" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                What is happening *
               </label>
+              {/* Each option leads with the direction, because that is the only
+                  thing that distinguishes them and it used to be buried at the
+                  end of the sentence. */}
               <Select
+                id="adjust-movement"
                 value={adjustMovementType}
                 onChange={(e) => setAdjustMovementType(e.target.value as any)}
                 required
               >
-                <option value="CHECKIN">Stock In — receiving from supplier</option>
-                <option value="INTERNAL_MOVE">Move — between warehouse locations</option>
-                <option value="CHECKOUT">Stock Out — dispatch to customer</option>
-                {/* The way to reduce stock when nothing shipped. Without it the
-                    only option was Stock Out, which demands a real dispatched
-                    shipment — so damage and miscounts had to be recorded as
-                    goods leaving on someone's order. */}
-                <option value="ADJUSTMENT">Write Off — damage, loss or a miscount</option>
+                <option value="CHECKIN">Add stock — a delivery arriving</option>
+                <option value="INTERNAL_MOVE">Move stock — between two locations</option>
+                <option value="ADJUSTMENT">Remove stock — damage, loss or a miscount</option>
+                <option value="CHECKOUT">Ship out — against a dispatched shipment</option>
               </Select>
             </div>
             <div>
@@ -1883,43 +1921,72 @@ export default function InventoryPage() {
                 id="adjust-quantity"
                 type="number"
                 min="1"
+                max={takesFromABin ? String(availableHere) : undefined}
                 value={adjustQuantity}
                 onChange={(e) => setAdjustQuantity(parseInt(e.target.value) || 1)}
                 required
               />
+              {/* The arithmetic, before the request rather than after it. The
+                  server's refusal was accurate and arrived too late to stop the
+                  operator wondering where the stock had gone. */}
+              {takesFromABin && adjustFromLocationId ? (
+                <p
+                  className={`mt-1 text-xs ${
+                    adjustQuantity > availableHere ? 'text-amber-700' : 'text-slate-500'
+                  }`}
+                >
+                  {adjustQuantity > availableHere ? (
+                    <>Only {availableHere} available here</>
+                  ) : (
+                    <>
+                      {availableHere} available here · {availableHere - adjustQuantity} after this
+                    </>
+                  )}
+                </p>
+              ) : null}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {/* Show Source Slot for anything leaving a bin */}
-            {(adjustMovementType === 'CHECKOUT' ||
-              adjustMovementType === 'INTERNAL_MOVE' ||
-              adjustMovementType === 'ADJUSTMENT') && (
+            {/* Only the bins that hold this product, each with what can be
+                taken from it. Listing the whole building offered a choice that
+                was wrong nearly every time. */}
+            {takesFromABin && (
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                  Source Slot (From) *
+                <label htmlFor="adjust-from" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Take it from *
                 </label>
-                <Select
-                  value={adjustFromLocationId}
-                  onChange={(e) => setAdjustFromLocationId(e.target.value)}
-                  required
-                >
-                  {locations.map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.locationName} (Zone {loc.zone || '—'})
-                    </option>
-                  ))}
-                </Select>
+                {sourceBins.length === 0 ? (
+                  <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500 dark:bg-slate-900/40">
+                    {adjustProductId
+                      ? 'None of this product is available in any location. Anything on hand is already reserved for a shipment.'
+                      : 'Choose a product first.'}
+                  </p>
+                ) : (
+                  <Select
+                    id="adjust-from"
+                    value={adjustFromLocationId}
+                    onChange={(e) => setAdjustFromLocationId(e.target.value)}
+                    required
+                  >
+                    {sourceBins.map((bin) => (
+                      <option key={bin.id} value={bin.id}>
+                        {bin.label} — {bin.available} available
+                      </option>
+                    ))}
+                  </Select>
+                )}
               </div>
             )}
 
-            {/* Show Destination Slot for checkin/move */}
+            {/* The full list here, deliberately: stock can be put anywhere. */}
             {(adjustMovementType === 'CHECKIN' || adjustMovementType === 'INTERNAL_MOVE') && (
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                  Destination Slot (To) *
+                <label htmlFor="adjust-to" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Put it on *
                 </label>
                 <Select
+                  id="adjust-to"
                   value={adjustToLocationId}
                   onChange={(e) => setAdjustToLocationId(e.target.value)}
                   required
@@ -2131,14 +2198,26 @@ export default function InventoryPage() {
             <span className="font-semibold text-slate-900 dark:text-white">{selectedProduct?.productName}</span> (SKU:{' '}
             <span className="font-mono">{selectedProduct?.skuCode}</span>)?
           </p>
-          {/* The old copy said the database would "restrict this delete to
-              maintain system integrity", which described a 500. The rules are
-              checked properly now, so they can be stated as rules. */}
+          {/* States what actually goes, using the figures the detail modal has
+              already loaded. Stock rows disappear here without a movement of
+              their own, so if this is not said here it is not said anywhere. */}
           <p className="text-xs text-slate-600 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 p-3 rounded-xl">
-            This works only for a product that was never used — nothing on the
-            shelf, no recorded movements, and not on any shipment. Anything else
-            is refused, and <strong>Deactivate</strong> is what you want: it hides
-            the product and keeps its history.
+            {detail && detail.totalQuantity > 0 ? (
+              <>
+                This product has{' '}
+                <strong>
+                  {detail.totalQuantity} {detail.totalQuantity === 1 ? 'unit' : 'units'} across{' '}
+                  {detail.stockLevels.length}{' '}
+                  {detail.stockLevels.length === 1 ? 'location' : 'locations'}
+                </strong>
+                . Deleting removes the product, that stock and its movement history
+                together — those units stop being on record as being in the warehouse.{' '}
+              </>
+            ) : (
+              <>Deleting removes the product and its movement history for good. </>
+            )}
+            It is refused once anything has been dispatched. Use{' '}
+            <strong>Deactivate</strong> to hide the product and keep all of it.
           </p>
         </div>
       </Modal>

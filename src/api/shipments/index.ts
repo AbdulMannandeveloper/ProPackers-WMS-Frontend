@@ -66,6 +66,17 @@ export type Shipment = {
   /** Courier consignment number. An item's own trackingId takes precedence. */
   trackingId?: string | null
   createdAt: string
+  /**
+   * Whoever was signed in when the shipment was made — an admin as readily as
+   * an employee. Null only on rows written before creators were recorded, which
+   * carry `employee` instead.
+   */
+  createdBy?: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+  } | null
   client?: {
     id: string
     companyName: string
