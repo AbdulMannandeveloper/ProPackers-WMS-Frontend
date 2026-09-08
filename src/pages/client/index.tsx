@@ -211,7 +211,7 @@ export default function ClientPortalPage() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `ProPackers_Invoice_${invoice.id.slice(0, 8).toUpperCase()}_${new Date(
+      link.download = `Pro_Packers_UK_Invoice_${invoice.id.slice(0, 8).toUpperCase()}_${new Date(
         invoice.billingPeriod
       )
         .toISOString()

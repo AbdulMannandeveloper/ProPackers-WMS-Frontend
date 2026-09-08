@@ -123,7 +123,7 @@ export default function LoginPage() {
       subtitle={
         showOtp
           ? 'One more step to reach your workspace.'
-          : 'Sign in to your ProPackers workspace.'
+          : 'Sign in to your Pro Packers UK workspace.'
       }
       error={error || null}
       step={<AuthSteps current={showOtp ? 2 : 1} />}
