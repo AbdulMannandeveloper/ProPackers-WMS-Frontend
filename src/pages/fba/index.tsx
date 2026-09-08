@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { fba as fbaApi, clients as clientsApi } from '@/api'
 import type { FbaCategory, FbaShipment } from '@/api/fba'
@@ -46,8 +46,12 @@ export default function FbaPage() {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
   const [newCategory, setNewCategory] = useState('')
 
-  // Deleting is irreversible and there is no undo, so it is confirmed.
-  const [deleting, setDeleting] = useState<FbaShipment | null>(null)
+  // Which action is waiting on a yes, and whether it is in flight.
+  const [pending, setPending] = useState<{
+    action: 'dispatch' | 'void' | 'delete'
+    shipment: FbaShipment
+  } | null>(null)
+  const [acting, setActing] = useState(false)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [formCategoryId, setFormCategoryId] = useState('')
@@ -152,42 +156,93 @@ export default function FbaPage() {
     }
   }
 
-  const handleDispatch = async (shipment: FbaShipment) => {
-    try {
-      await fbaApi.dispatchShipment(shipment.id)
-      showToast(`Consignment marked gone. ${shipment.count} item(s) billed.`)
-      await loadData()
-    } catch (err) {
-      showToast(errorFrom(err, 'Could not mark it gone.'), 'error')
-    }
-  }
-
-  const handleCancel = async (shipment: FbaShipment) => {
-    try {
-      await fbaApi.cancelShipment(shipment.id)
-      showToast('Consignment voided.')
-      await loadData()
-    } catch (err) {
-      showToast(errorFrom(err, 'Could not void it.'), 'error')
-    }
-  }
-
   /**
-   * Removes the record of one recorded in error. Cancelling leaves it visible
-   * as a void; this takes the row away entirely, which only makes sense for
-   * something that was never really here.
+   * Every action on this table is a one-way door, so every one of them asks
+   * first.
    *
-   * The server refuses a dispatched one — it has been billed — and says so; that
-   * message is shown rather than replaced.
+   * Marking gone raises a charge against the client. Voiding is final — a
+   * cancelled consignment cannot go back to received. Deleting takes the row
+   * away for good. None of the three can be undone from this screen, and the
+   * buttons sit next to each other on a narrow row, so a slip lands on the
+   * wrong one easily.
+   *
+   * One dialog rather than three: the shape is identical and the difference is
+   * only what it says, which is what CONFIRMATIONS holds.
    */
-  const handleDelete = async (shipment: FbaShipment) => {
+  type FbaAction = 'dispatch' | 'void' | 'delete'
+
+  const CONFIRMATIONS: Record<
+    FbaAction,
+    {
+      title: string
+      confirmLabel: string
+      body: (s: FbaShipment) => ReactNode
+      run: (s: FbaShipment) => Promise<unknown>
+      done: (s: FbaShipment) => string
+      failed: string
+    }
+  > = {
+    dispatch: {
+      title: 'Mark this consignment gone?',
+      confirmLabel: 'Mark it gone',
+      body: (s) => (
+        <>
+          This bills <strong>{s.client?.companyName ?? 'the client'}</strong> for{' '}
+          <strong>{s.count} item(s)</strong> at their agreed rate.
+          <br />
+          Once it has gone it can no longer be voided or deleted — only credited.
+        </>
+      ),
+      run: (s) => fbaApi.dispatchShipment(s.id),
+      done: (s) => `Consignment marked gone. ${s.count} item(s) billed.`,
+      failed: 'Could not mark it gone.',
+    },
+    void: {
+      title: 'Void this consignment?',
+      confirmLabel: 'Void it',
+      body: (s) => (
+        <>
+          <strong className="font-mono">{s.barcode}</strong> stays on file as cancelled
+          and nothing is billed. It cannot be brought back to received afterwards.
+        </>
+      ),
+      run: (s) => fbaApi.cancelShipment(s.id),
+      done: () => 'Consignment voided.',
+      failed: 'Could not void it.',
+    },
+    delete: {
+      title: 'Delete this consignment?',
+      confirmLabel: 'Delete it',
+      body: (s) => (
+        <>
+          The record of <strong className="font-mono">{s.barcode}</strong> — {s.count}{' '}
+          item(s) for {s.client?.companyName ?? 'this client'} — is removed for good.
+          Use <strong>Void</strong> instead to keep it on file as cancelled.
+        </>
+      ),
+      run: (s) => fbaApi.deleteShipment(s.id),
+      done: (s) => `Consignment ${s.barcode} deleted.`,
+      failed: 'Could not delete it.',
+    },
+  }
+
+  const runPending = async () => {
+    if (!pending || acting) return
+    const { action, shipment } = pending
+    const spec = CONFIRMATIONS[action]
+
+    setActing(true)
     try {
-      await fbaApi.deleteShipment(shipment.id)
-      showToast(`Consignment ${shipment.barcode} deleted.`)
-      setDeleting(null)
+      await spec.run(shipment)
+      showToast(spec.done(shipment))
+      setPending(null)
       await loadData()
     } catch (err) {
-      showToast(errorFrom(err, 'Could not delete it.'), 'error')
+      // The server's refusal is the useful sentence — it names the client and
+      // says what to do instead. The fallback is only for a dead connection.
+      showToast(errorFrom(err, spec.failed), 'error')
+    } finally {
+      setActing(false)
     }
   }
 
@@ -283,14 +338,18 @@ export default function FbaPage() {
                       {s.status === 'RECEIVED' && (
                         <Button
                           size="sm"
-                          onClick={() => handleDispatch(s)}
+                          onClick={() => setPending({ action: 'dispatch', shipment: s })}
                           title={`Marks it gone and bills ${s.count} item(s)`}
                         >
                           Mark Gone
                         </Button>
                       )}
                       {isAdmin && s.status === 'RECEIVED' && (
-                        <Button size="sm" variant="outline" onClick={() => handleCancel(s)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setPending({ action: 'void', shipment: s })}
+                        >
                           Void
                         </Button>
                       )}
@@ -302,7 +361,7 @@ export default function FbaPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => setDeleting(s)}
+                          onClick={() => setPending({ action: 'delete', shipment: s })}
                           title="Removes the record entirely"
                         >
                           Delete
@@ -413,29 +472,27 @@ export default function FbaPage() {
         </form>
       </Modal>
 
-      {/* ── Deleting a consignment ────────────────────────────────────────── */}
+      {/* ── Confirming an action ──────────────────────────────────────────── */}
       <Modal
-        open={Boolean(deleting)}
-        onClose={() => setDeleting(null)}
-        title="Delete this consignment?"
+        open={Boolean(pending)}
+        onClose={() => !acting && setPending(null)}
+        title={pending ? CONFIRMATIONS[pending.action].title : ''}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setDeleting(null)}>
+            <Button variant="outline" onClick={() => setPending(null)} disabled={acting}>
               Cancel
             </Button>
-            <Button onClick={() => deleting && void handleDelete(deleting)}>
-              Delete it
+            <Button onClick={() => void runPending()} loading={acting}>
+              {pending ? CONFIRMATIONS[pending.action].confirmLabel : ''}
             </Button>
           </div>
         }
       >
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          The record of{' '}
-          <strong className="font-mono">{deleting?.barcode}</strong> —{' '}
-          {deleting?.count} item(s) for {deleting?.client?.companyName ?? 'this client'} — is
-          removed for good. Use <strong>Void</strong> instead to keep it on file as
-          cancelled.
-        </p>
+        {pending && (
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            {CONFIRMATIONS[pending.action].body(pending.shipment)}
+          </p>
+        )}
       </Modal>
 
       {/* ── Categories ────────────────────────────────────────────────────── */}
