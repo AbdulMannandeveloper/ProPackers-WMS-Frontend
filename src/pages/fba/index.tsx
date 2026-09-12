@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { fba as fbaApi, clients as clientsApi } from '@/api'
 import type { FbaCategory, FbaShipment } from '@/api/fba'
@@ -52,6 +52,10 @@ export default function FbaPage() {
     shipment: FbaShipment
   } | null>(null)
   const [acting, setActing] = useState(false)
+
+  // Table filters
+  const [shipmentSearch, setShipmentSearch] = useState('')
+  const [shipmentStatusFilter, setShipmentStatusFilter] = useState('')
 
   const [createOpen, setCreateOpen] = useState(false)
   const [formCategoryId, setFormCategoryId] = useState('')
@@ -246,6 +250,19 @@ export default function FbaPage() {
     }
   }
 
+  // Search by barcode, client or category; narrow further by status.
+  const filteredShipments = useMemo(() => {
+    const q = shipmentSearch.trim().toLowerCase()
+    return shipments.filter((s) => {
+      if (shipmentStatusFilter && s.status !== shipmentStatusFilter) return false
+      if (!q) return true
+      const barcode = (s.barcode || '').toLowerCase()
+      const client = (s.client?.companyName || '').toLowerCase()
+      const category = (s.category?.name || '').toLowerCase()
+      return barcode.includes(q) || client.includes(q) || category.includes(q)
+    })
+  }, [shipments, shipmentSearch, shipmentStatusFilter])
+
   const statusStyle = (status: FbaShipment['status']) =>
     status === 'DISPATCHED'
       ? 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200'
@@ -289,7 +306,40 @@ export default function FbaPage() {
       </div>
 
       <Card>
-        <CardContent className="p-0 overflow-x-auto">
+        <CardContent className="p-0">
+          {shipments.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center p-4 pb-0">
+              <Input
+                placeholder="Search FBA consignments..."
+                value={shipmentSearch}
+                onChange={(e) => setShipmentSearch(e.target.value)}
+                className="max-w-sm"
+              />
+              <Select
+                value={shipmentStatusFilter}
+                onChange={(e) => setShipmentStatusFilter(e.target.value)}
+                className="max-w-56"
+              >
+                <option value="">All Statuses</option>
+                <option value="RECEIVED">Received</option>
+                <option value="DISPATCHED">Dispatched</option>
+                <option value="CANCELLED">Cancelled</option>
+              </Select>
+              {(shipmentSearch || shipmentStatusFilter) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShipmentSearch('')
+                    setShipmentStatusFilter('')
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          )}
+          <div className="overflow-x-auto">
           <table className="w-full min-w-[60rem] text-left text-sm">
             <thead className="border-b border-slate-100 dark:border-slate-800 text-slate-500">
               <tr>
@@ -316,8 +366,14 @@ export default function FbaPage() {
                     No consignments recorded yet.
                   </td>
                 </tr>
+              ) : filteredShipments.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                    No consignments match the selected filters.
+                  </td>
+                </tr>
               ) : (
-                shipments.map((s) => (
+                filteredShipments.map((s) => (
                   <tr key={s.id}>
                     <td className="p-4 font-mono font-semibold text-slate-800 dark:text-slate-200">
                       {s.barcode}
@@ -373,6 +429,7 @@ export default function FbaPage() {
               )}
             </tbody>
           </table>
+          </div>
         </CardContent>
       </Card>
 

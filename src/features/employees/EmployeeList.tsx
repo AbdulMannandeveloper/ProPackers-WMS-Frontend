@@ -148,7 +148,7 @@ export default function EmployeeList() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, email or job title"
+              placeholder="Search employees..."
               loading={loading}
               aria-label="Search employees"
             />

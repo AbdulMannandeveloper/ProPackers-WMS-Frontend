@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -14,10 +14,12 @@ import {
   CardContent,
   Badge,
   Input,
+  Select,
   Modal,
 } from '@/components/Shared Components'
 import { TrackingChip } from '@/components/TrackingChip'
 import { validateTrackingId, normaliseTrackingId } from '@/lib/couriers'
+import { SlidersHorizontal } from 'lucide-react'
 
 export default function ShipmentsPage() {
   const navigate = useNavigate()
@@ -55,6 +57,25 @@ export default function ShipmentsPage() {
 
   // Selected Records
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null)
+
+  // Table filters
+  const [shipmentSearch, setShipmentSearch] = useState('')
+  const [shipmentStatusFilter, setShipmentStatusFilter] = useState('')
+  const [shipmentDateFrom, setShipmentDateFrom] = useState('')
+  const [shipmentDateTo, setShipmentDateTo] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filtersRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!filtersOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+        setFiltersOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [filtersOpen])
 
   // Tracking number editor, inside the details drawer.
   // Returning a dispatched line. Held per item id so two rows cannot share a
@@ -357,6 +378,41 @@ export default function ShipmentsPage() {
     return 'Unknown'
   }
 
+  // Table filters — reference, client company, creator or tracking number,
+  // plus status and a created-on date range.
+  const filteredShipments = useMemo(() => {
+    const q = shipmentSearch.trim().toLowerCase()
+    const from = shipmentDateFrom ? new Date(`${shipmentDateFrom}T00:00:00`) : null
+    const to = shipmentDateTo ? new Date(`${shipmentDateTo}T23:59:59.999`) : null
+    return shipments.filter((s) => {
+      if (shipmentStatusFilter && s.status !== shipmentStatusFilter) return false
+      const created = new Date(s.createdAt)
+      if (from && created < from) return false
+      if (to && created > to) return false
+      if (!q) return true
+      const reference = (s.reference || '').toLowerCase()
+      const client = (s.client?.companyName || '').toLowerCase()
+      const tracking = (s.trackingId || '').toLowerCase()
+      // Inlined rather than calling getCreatorName, so this memo does not need
+      // that function (a new reference every render) in its dependency list.
+      const legacy = (s as any).employee
+      const creator = (
+        s.createdBy
+          ? `${s.createdBy.firstName} ${s.createdBy.lastName}`
+          : legacy?.user
+            ? `${legacy.user.firstName} ${legacy.user.lastName}`
+            : 'Unknown'
+      ).toLowerCase()
+      return reference.includes(q) || client.includes(q) || tracking.includes(q) || creator.includes(q)
+    })
+  }, [shipments, shipmentSearch, shipmentStatusFilter, shipmentDateFrom, shipmentDateTo])
+
+  const activeShipmentFilterCount = [
+    Boolean(shipmentStatusFilter),
+    Boolean(shipmentDateFrom),
+    Boolean(shipmentDateTo),
+  ].filter(Boolean).length
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto relative">
       {/* Toast popup */}
@@ -418,7 +474,109 @@ export default function ShipmentsPage() {
           {loading ? (
             <div className="py-12 text-center text-slate-500">Syncing shipments database...</div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              {shipments.length > 0 && (
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center mb-4">
+                  <Input
+                    placeholder="Search shipments or outbound orders..."
+                    value={shipmentSearch}
+                    onChange={(e) => setShipmentSearch(e.target.value)}
+                    className="max-w-sm"
+                  />
+                  {(shipmentSearch || activeShipmentFilterCount > 0) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShipmentSearch('')
+                        setShipmentStatusFilter('')
+                        setShipmentDateFrom('')
+                        setShipmentDateTo('')
+                      }}
+                    >
+                      Clear All
+                    </Button>
+                  )}
+                  <div ref={filtersRef} className="relative sm:ml-auto">
+                    <Button
+                      variant="outline"
+                      onClick={() => setFiltersOpen((open) => !open)}
+                      className="gap-2"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      Filters
+                      {activeShipmentFilterCount > 0 && (
+                        <Badge variant="default" className="ml-1 px-1.5 py-0 text-[10px] leading-4">
+                          {activeShipmentFilterCount}
+                        </Badge>
+                      )}
+                    </Button>
+
+                    {filtersOpen && (
+                      <div className="absolute right-0 z-20 mt-2 w-80 rounded-2xl border border-slate-200 dark:border-slate-800 bg-card p-4 shadow-lg space-y-4">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                            Status
+                          </label>
+                          <Select
+                            value={shipmentStatusFilter}
+                            onChange={(e) => setShipmentStatusFilter(e.target.value)}
+                          >
+                            <option value="">All Statuses</option>
+                            <option value="PENDING">Pending</option>
+                            <option value="READY_FOR_DISPATCH">Ready for Dispatch</option>
+                            <option value="DISPATCHED">Dispatched</option>
+                            <option value="CANCELLED">Cancelled</option>
+                          </Select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                            Created On
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-1">From</label>
+                              <Input
+                                type="date"
+                                value={shipmentDateFrom}
+                                onChange={(e) => setShipmentDateFrom(e.target.value)}
+                                className="min-w-0"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-1">To</label>
+                              <Input
+                                type="date"
+                                value={shipmentDateTo}
+                                onChange={(e) => setShipmentDateTo(e.target.value)}
+                                className="min-w-0"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center pt-1 border-t border-slate-100 dark:border-slate-800">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={activeShipmentFilterCount === 0}
+                            onClick={() => {
+                              setShipmentStatusFilter('')
+                              setShipmentDateFrom('')
+                              setShipmentDateTo('')
+                            }}
+                          >
+                            Clear Filters
+                          </Button>
+                          <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                            Done
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="overflow-x-auto">
               <table className="w-full min-w-[60rem] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
@@ -439,8 +597,14 @@ export default function ShipmentsPage() {
                         No shipments found. Register a new outbound order to start.
                       </td>
                     </tr>
+                  ) : filteredShipments.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                        No shipments match the selected filters.
+                      </td>
+                    </tr>
                   ) : (
-                    shipments.map((s) => (
+                    filteredShipments.map((s) => (
                       <tr key={s.id}>
                         {/* The label scanned off the parcel. This column used to
                             show eight characters of the row's uuid, which
@@ -517,7 +681,8 @@ export default function ShipmentsPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

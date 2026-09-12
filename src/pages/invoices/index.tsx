@@ -1,8 +1,7 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth'
-import { invoices as invoicesApi, clients as clientsApi, clientServices as clientServicesApi } from '@/api'
+import { invoices as invoicesApi, clientServices as clientServicesApi } from '@/api'
 import type { MonthlyInvoice, InvoiceLineItem } from '@/api/invoices'
-import type { Client } from '@/api/types'
 import {
   Button,
   Card,
@@ -12,6 +11,7 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
+import { SlidersHorizontal } from 'lucide-react'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,7 +38,6 @@ export default function InvoicesPage() {
 
   // ── Data ──
   const [allInvoices, setAllInvoices] = useState<MonthlyInvoice[]>([])
-  const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(false)
 
   // ── Toast ──
@@ -59,7 +58,24 @@ export default function InvoicesPage() {
 
   // ── Filters ──
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'DRAFT' | 'APPROVED' | 'PAID'>('ALL')
-  const [filterClientId, setFilterClientId] = useState('')
+  const [filterSearch, setFilterSearch] = useState('')
+  const [filterBillingFrom, setFilterBillingFrom] = useState('')
+  const [filterBillingTo, setFilterBillingTo] = useState('')
+  const [filterTotalMin, setFilterTotalMin] = useState('')
+  const [filterTotalMax, setFilterTotalMax] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filtersRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!filtersOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+        setFiltersOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [filtersOpen])
 
   // ── Manual Charge Form ──
   const [chargeDescription, setChargeDescription] = useState('')
@@ -123,13 +139,11 @@ export default function InvoicesPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const [invoicesData, clientsData, rateData] = await Promise.all([
+      const [invoicesData, rateData] = await Promise.all([
         invoicesApi.getAllInvoices(),
-        clientsApi.getAllClients().catch(() => [] as Client[]),
         invoicesApi.getTaxRate().catch(() => ({ rate: 20 })),
       ])
       setAllInvoices(invoicesData || [])
-      setClients(clientsData || [])
       setTaxRate(rateData?.rate ?? 20)
       setTaxRateDraft(String(rateData?.rate ?? 20))
     } catch (err: any) {
@@ -143,12 +157,36 @@ export default function InvoicesPage() {
 
   // ── Derived / Filtered ──
   const filteredInvoices = useMemo(() => {
+    const q = filterSearch.trim().toLowerCase()
+    const billingFrom = filterBillingFrom ? new Date(`${filterBillingFrom}-01`) : null
+    const billingTo = filterBillingTo ? new Date(`${filterBillingTo}-01`) : null
+    const totalMin = filterTotalMin.trim() === '' ? null : Number(filterTotalMin)
+    const totalMax = filterTotalMax.trim() === '' ? null : Number(filterTotalMax)
     return allInvoices.filter((inv) => {
       if (filterStatus !== 'ALL' && inv.status !== filterStatus) return false
-      if (filterClientId && inv.clientId !== filterClientId) return false
-      return true
+      const billingPeriod = new Date(inv.billingPeriod)
+      if (billingFrom && billingPeriod < billingFrom) return false
+      if (billingTo && billingPeriod > billingTo) return false
+      if (totalMin !== null || totalMax !== null) {
+        const total = invoicesApi.grandTotal(inv)
+        if (totalMin !== null && !Number.isNaN(totalMin) && total < totalMin) return false
+        if (totalMax !== null && !Number.isNaN(totalMax) && total > totalMax) return false
+      }
+      if (!q) return true
+      const client = (inv.client?.companyName || '').toLowerCase()
+      const contact = (inv.client?.contactName || '').toLowerCase()
+      const id = inv.id.toLowerCase()
+      return client.includes(q) || contact.includes(q) || id.includes(q)
     })
-  }, [allInvoices, filterStatus, filterClientId])
+  }, [allInvoices, filterStatus, filterSearch, filterBillingFrom, filterBillingTo, filterTotalMin, filterTotalMax])
+
+  const activeInvoiceFilterCount = [
+    filterStatus !== 'ALL',
+    Boolean(filterBillingFrom),
+    Boolean(filterBillingTo),
+    Boolean(filterTotalMin),
+    Boolean(filterTotalMax),
+  ].filter(Boolean).length
 
   const draftCount = useMemo(() => allInvoices.filter((i) => i.status === 'DRAFT').length, [allInvoices])
   const approvedCount = useMemo(() => allInvoices.filter((i) => i.status === 'APPROVED').length, [allInvoices])
@@ -387,73 +425,178 @@ export default function InvoicesPage() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-sm">
-          {(['ALL', 'DRAFT', 'APPROVED', 'PAID'] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setFilterStatus(s)}
-              className={`px-4 py-2 font-medium transition-colors ${
-                filterStatus === s
-                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                  : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
-              }`}
-            >
-              {s === 'ALL' ? 'All' : statusConfig[s].label}
-            </button>
-          ))}
+      {/* Platform tax rate. Changing it affects invoices taxed from now on — an
+          invoice already taxed keeps the rate it was issued at, so a rate
+          change never restates what a client has already been sent. */}
+      {isAdmin && (
+        <div className="flex items-end gap-3 flex-wrap rounded-2xl border border-slate-200 dark:border-slate-800 bg-card p-4">
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              Platform tax rate (%)
+            </label>
+            <Input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              className="w-28"
+              value={taxRateDraft}
+              onChange={(e) => setTaxRateDraft(e.target.value)}
+              aria-label="Platform tax rate percentage"
+            />
+          </div>
+          <Button
+            variant="outline"
+            loading={savingRate} disabled={taxRateDraft === String(taxRate)}
+            onClick={() => void handleSaveTaxRate()}
+          >
+            {savingRate ? 'Saving…' : 'Save rate'}
+          </Button>
+          <p className="text-xs text-slate-400 flex-1 min-w-[16rem]">
+            Applied per invoice with the Tax box below, while it is still a
+            draft. Invoices already taxed keep the rate they were issued at.
+          </p>
         </div>
-        <select
-          value={filterClientId}
-          onChange={(e) => setFilterClientId(e.target.value)}
-          className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-200 px-3 py-2 h-10"
-        >
-          <option value="">All Clients</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>{c.companyName}</option>
-          ))}
-        </select>
-        <span className="text-xs text-slate-400">{filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}</span>
-      </div>
+      )}
 
       {/* Invoice Table */}
       <Card className="shadow-md border-slate-200 dark:border-slate-800">
         <CardContent className="p-0">
-          {/* The platform tax rate. Changing it affects invoices taxed from now
-              on — an invoice already taxed keeps the rate it was issued at, so a
-              rate change never restates what a client has already been sent. */}
-          {isAdmin && (
-            <div className="flex items-end gap-3 flex-wrap border-b border-slate-100 dark:border-slate-800 px-6 py-4">
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                  Platform tax rate (%)
-                </label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  className="w-28"
-                  value={taxRateDraft}
-                  onChange={(e) => setTaxRateDraft(e.target.value)}
-                  aria-label="Platform tax rate percentage"
-                />
-              </div>
+          {/* Search + Filters toolbar — moved here from above the card, where
+              the tax rate panel now sits instead. */}
+          <div className="flex flex-wrap gap-3 items-center border-b border-slate-100 dark:border-slate-800 px-6 py-4">
+            <Input
+              placeholder="Search invoices..."
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+              className="max-w-xs"
+            />
+            {(filterSearch || activeInvoiceFilterCount > 0) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFilterSearch('')
+                  setFilterStatus('ALL')
+                  setFilterBillingFrom('')
+                  setFilterBillingTo('')
+                  setFilterTotalMin('')
+                  setFilterTotalMax('')
+                }}
+              >
+                Clear All
+              </Button>
+            )}
+            <div ref={filtersRef} className="relative ml-auto">
               <Button
                 variant="outline"
-                loading={savingRate} disabled={taxRateDraft === String(taxRate)}
-                onClick={() => void handleSaveTaxRate()}
+                onClick={() => setFiltersOpen((open) => !open)}
+                className="gap-2"
               >
-                {savingRate ? 'Saving…' : 'Save rate'}
+                <SlidersHorizontal className="w-4 h-4" />
+                Filters
+                {activeInvoiceFilterCount > 0 && (
+                  <Badge variant="default" className="ml-1 px-1.5 py-0 text-[10px] leading-4">
+                    {activeInvoiceFilterCount}
+                  </Badge>
+                )}
               </Button>
-              <p className="text-xs text-slate-400 flex-1 min-w-[16rem]">
-                Applied per invoice with the Tax box below, while it is still a
-                draft. Invoices already taxed keep the rate they were issued at.
-              </p>
+
+              {filtersOpen && (
+                <div className="absolute right-0 z-20 mt-2 w-80 rounded-2xl border border-slate-200 dark:border-slate-800 bg-card p-4 shadow-lg space-y-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                      Status
+                    </label>
+                    <div className="flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-sm">
+                      {(['ALL', 'DRAFT', 'APPROVED', 'PAID'] as const).map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setFilterStatus(s)}
+                          className={`flex-1 px-2 py-2 font-medium transition-colors ${
+                            filterStatus === s
+                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                              : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          {s === 'ALL' ? 'All' : statusConfig[s].label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                      Billing Period
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1">From</label>
+                        <Input
+                          type="month"
+                          value={filterBillingFrom}
+                          onChange={(e) => setFilterBillingFrom(e.target.value)}
+                          className="min-w-0"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1">To</label>
+                        <Input
+                          type="month"
+                          value={filterBillingTo}
+                          onChange={(e) => setFilterBillingTo(e.target.value)}
+                          className="min-w-0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                      Total Due (£)
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="Min"
+                        value={filterTotalMin}
+                        onChange={(e) => setFilterTotalMin(e.target.value)}
+                        className="min-w-0"
+                      />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="Max"
+                        value={filterTotalMax}
+                        onChange={(e) => setFilterTotalMax(e.target.value)}
+                        className="min-w-0"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={activeInvoiceFilterCount === 0}
+                      onClick={() => {
+                        setFilterStatus('ALL')
+                        setFilterBillingFrom('')
+                        setFilterBillingTo('')
+                        setFilterTotalMin('')
+                        setFilterTotalMax('')
+                      }}
+                    >
+                      Clear Filters
+                    </Button>
+                    <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                      Done
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+            {/* <span className="text-xs text-slate-400">{filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}</span> */}
+          </div>
 
           {loading ? (
             <div className="py-16 text-center text-slate-400">Loading billing records...</div>
@@ -477,7 +620,7 @@ export default function InvoicesPage() {
                   {filteredInvoices.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="py-12 text-center text-slate-400">
-                        {filterStatus !== 'ALL' || filterClientId
+                        {filterStatus !== 'ALL' || activeInvoiceFilterCount > 0 || filterSearch
                           ? 'No invoices match your filters.'
                           : 'No invoices yet. Dispatch a shipment to auto-generate the first one.'}
                       </td>

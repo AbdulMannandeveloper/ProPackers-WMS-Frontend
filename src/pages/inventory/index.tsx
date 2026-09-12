@@ -119,9 +119,9 @@ export default function InventoryPage() {
   const [adjustProductSearch, setAdjustProductSearch] = useState('')
 
   // Search/Filters (Products tab)
-  const [skuSearch, setSkuSearch] = useState('')
-  const [productNameSearch, setProductNameSearch] = useState('')
+  const [productSearch, setProductSearch] = useState('')
   const [hideDeactivated, setHideDeactivated] = useState(false)
+  const [stockLevelFilter, setStockLevelFilter] = useState<'' | 'BELOW' | 'ABOVE'>('')
 
   // Stock tab filters (US-041)
   const [stockClientFilter, setStockClientFilter] = useState('')
@@ -134,6 +134,10 @@ export default function InventoryPage() {
   const [ledgerMovementType, setLedgerMovementType] = useState('')
   const [ledgerProductSearch, setLedgerProductSearch] = useState('')
   const [ledgerFiltering, setLedgerFiltering] = useState(false)
+
+  // Audit Logs tab filters
+  const [auditSearch, setAuditSearch] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState('')
 
   // Daily Checkout tab (US-053/054)
   const [dailyCheckoutDate, setDailyCheckoutDate] = useState(() => new Date().toISOString().split('T')[0])
@@ -758,11 +762,22 @@ export default function InventoryPage() {
 
   // Filtered Lists (US-044: deactivated products toggle + sort)
   const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase()
     let list = products.filter((p) => {
-      const matchSku = p.skuCode.toLowerCase().includes(skuSearch.toLowerCase())
-      const matchName = p.productName.toLowerCase().includes(productNameSearch.toLowerCase())
       if (hideDeactivated && p.isDeactivated) return false
-      return matchSku && matchName
+      if (stockLevelFilter) {
+        const totalQty = stockLevels
+          .filter((s) => s.productId === p.id)
+          .reduce((sum, s) => sum + s.currentQuantity, 0)
+        const isBelow = totalQty < p.thresholdLimit
+        if (stockLevelFilter === 'BELOW' && !isBelow) return false
+        if (stockLevelFilter === 'ABOVE' && isBelow) return false
+      }
+      if (!q) return true
+      const sku = p.skuCode.toLowerCase()
+      const name = p.productName.toLowerCase()
+      const client = (p.client?.companyName || '').toLowerCase()
+      return sku.includes(q) || name.includes(q) || client.includes(q)
     })
     // Sort: active first, deactivated last
     list = list.sort((a, b) => {
@@ -770,7 +785,7 @@ export default function InventoryPage() {
       return a.isDeactivated ? 1 : -1
     })
     return list
-  }, [products, skuSearch, productNameSearch, hideDeactivated])
+  }, [products, productSearch, hideDeactivated, stockLevelFilter, stockLevels])
 
   // Product picker inside the Adjust Stock modal. A plain <select> of every SKU is
   // unusable once the catalog grows, so the list is searchable by SKU or name.
@@ -794,6 +809,26 @@ export default function InventoryPage() {
       return true
     })
   }, [stockLevels, stockClientFilter, stockLocationFilter, products])
+
+  // Audit log distinct actions, for the filter dropdown — built from whatever
+  // has actually been recorded rather than a fixed list, so a new action type
+  // shows up without a code change here.
+  const auditActionOptions = useMemo(() => {
+    const set = new Set<string>()
+    auditLogs.forEach((log) => { if (log.action) set.add(log.action) })
+    return Array.from(set).sort()
+  }, [auditLogs])
+
+  const filteredAuditLogs = useMemo(() => {
+    const q = auditSearch.trim().toLowerCase()
+    return auditLogs.filter((log) => {
+      if (auditActionFilter && log.action !== auditActionFilter) return false
+      if (!q) return true
+      const userName = log.user ? `${log.user.firstName || ''} ${log.user.lastName || ''}`.toLowerCase() : 'system admin'
+      const action = (log.action || '').toLowerCase()
+      return userName.includes(q) || action.includes(q)
+    })
+  }, [auditLogs, auditSearch, auditActionFilter])
 
   const formatWeight = (w?: any) => {
     if (w === undefined || w === null) return '—'
@@ -909,21 +944,24 @@ export default function InventoryPage() {
               {activeTab === 'products' && (
                 <div className="space-y-4">
                   {/* Search filters + US-044 toggle */}
-                  <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                  <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center flex-wrap">
                     <Input
-                      placeholder="Search by SKU code..."
-              loading={loading}
-                      value={skuSearch}
-                      onChange={(e) => setSkuSearch(e.target.value)}
-                      className="max-w-xs"
+                      placeholder="Search by SKU, product name, or client..."
+                      loading={loading}
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      className="max-w-sm"
                     />
-                    <Input
-                      placeholder="Search by Product name..."
-                      value={productNameSearch}
-                      onChange={(e) => setProductNameSearch(e.target.value)}
-                      className="max-w-xs"
-                    />
-                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none ml-auto [@media(pointer:coarse)]:py-2">
+                    <Select
+                      value={stockLevelFilter}
+                      onChange={(e) => setStockLevelFilter(e.target.value as '' | 'BELOW' | 'ABOVE')}
+                      className="max-w-56"
+                    >
+                      <option value="">All Stock Levels</option>
+                      <option value="BELOW">Below Threshold</option>
+                      <option value="ABOVE">Above Threshold</option>
+                    </Select>
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none [@media(pointer:coarse)]:py-2">
                       <input
                         type="checkbox"
                         checked={hideDeactivated}
@@ -932,6 +970,20 @@ export default function InventoryPage() {
                       />
                       Hide Deactivated
                     </label>
+                    {(productSearch || stockLevelFilter || hideDeactivated) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto"
+                        onClick={() => {
+                          setProductSearch('')
+                          setStockLevelFilter('')
+                          setHideDeactivated(false)
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
                   </div>
 
                   <div className="overflow-x-auto">
@@ -1347,6 +1399,38 @@ export default function InventoryPage() {
                       {auditLoading ? 'Refreshing...' : 'Refresh Logs'}
                     </Button>
                   </div>
+                  {auditLogs.length > 0 && (
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                      <Input
+                        placeholder="Search by user or action..."
+                        value={auditSearch}
+                        onChange={(e) => setAuditSearch(e.target.value)}
+                        className="max-w-xs"
+                      />
+                      <Select
+                        value={auditActionFilter}
+                        onChange={(e) => setAuditActionFilter(e.target.value)}
+                        className="max-w-56"
+                      >
+                        <option value="">All Actions</option>
+                        {auditActionOptions.map((action) => (
+                          <option key={action} value={action}>{action}</option>
+                        ))}
+                      </Select>
+                      {(auditSearch || auditActionFilter) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setAuditSearch('')
+                            setAuditActionFilter('')
+                          }}
+                        >
+                          Clear Filters
+                        </Button>
+                      )}
+                    </div>
+                  )}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm text-slate-600 dark:text-slate-400">
                       <thead>
@@ -1364,8 +1448,14 @@ export default function InventoryPage() {
                               No manual edits or deletions recorded.
                             </td>
                           </tr>
+                        ) : filteredAuditLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-400">
+                              No audit entries match the selected filters.
+                            </td>
+                          </tr>
                         ) : (
-                          auditLogs.map((log) => {
+                          filteredAuditLogs.map((log) => {
                             let parsed = {}
                             try {
                               parsed = JSON.parse(log.details)

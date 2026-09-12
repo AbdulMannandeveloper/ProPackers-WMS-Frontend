@@ -192,7 +192,8 @@ export default function ClientList() {
       return (
         (c.companyName || '').toLowerCase().includes(q) ||
         (c.contactName || '').toLowerCase().includes(q) ||
-        (c.email || '').toLowerCase().includes(q)
+        (c.email || '').toLowerCase().includes(q) ||
+        (c.mobile || '').toLowerCase().includes(q)
       )
     })
   }, [items, searchQuery])

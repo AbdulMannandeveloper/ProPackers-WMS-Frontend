@@ -73,6 +73,9 @@ export default function PayrollPage() {
   const [selectedEmpUserId, setSelectedEmpUserId] = useState('')
   const [selectedEmpName, setSelectedEmpName] = useState('')
 
+  // Table filter (admin summary)
+  const [employeeSearch, setEmployeeSearch] = useState('')
+
   // Form States
   const [baseSalaryInput, setBaseSalaryInput] = useState('')
   const [fineRuleForm, setFineRuleForm] = useState({ lateMinutes: 10, fineType: 'FIXED', amount: '' })
@@ -248,6 +251,18 @@ export default function PayrollPage() {
     return payrollSummary.reduce((acc, rec) => acc + rec.netPay, 0)
   }, [payrollSummary])
 
+  // Search by employee name, unique number, or job title.
+  const filteredPayrollSummary = useMemo(() => {
+    const q = employeeSearch.trim().toLowerCase()
+    if (!q) return payrollSummary
+    return payrollSummary.filter((r) => {
+      const name = (r.employeeName || '').toLowerCase()
+      const number = (r.employeeUniqueNumber || '').toLowerCase()
+      const title = (r.jobTitle || '').toLowerCase()
+      return name.includes(q) || number.includes(q) || title.includes(q)
+    })
+  }, [payrollSummary, employeeSearch])
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto relative">
       {/* Toast Alert */}
@@ -347,8 +362,23 @@ export default function PayrollPage() {
           ) : isAdmin ? (
             /* ADMIN DETAILED SUMMARY */
             <div className="space-y-6">
+              {payrollSummary.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <Input
+                    placeholder="Search by employee name, number, or job title..."
+                    value={employeeSearch}
+                    onChange={(e) => setEmployeeSearch(e.target.value)}
+                    className="max-w-sm"
+                  />
+                  {employeeSearch && (
+                    <Button variant="ghost" size="sm" onClick={() => setEmployeeSearch('')}>
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              )}
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[52rem] text-left text-sm">
+                <table className="w-full min-w-208 text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 pb-2">
                       <th className="pb-3 font-semibold">Employee</th>
@@ -367,8 +397,14 @@ export default function PayrollPage() {
                           No employee records found for this period. Ensure employees have active accounts.
                         </td>
                       </tr>
+                    ) : filteredPayrollSummary.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
+                          No employees match "{employeeSearch}".
+                        </td>
+                      </tr>
                     ) : (
-                      payrollSummary.map((record) => {
+                      filteredPayrollSummary.map((record) => {
                         return (
                           <tr key={record.userId} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30">
                             <td className="py-4 font-medium">
