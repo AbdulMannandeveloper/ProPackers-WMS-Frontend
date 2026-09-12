@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { expenses as expensesApi } from '@/api'
 import { AXIOS_INSTANCE } from '@/api/http-client'
 import type { Expense, ExpenseCategory } from '@/api/expenses'
@@ -15,7 +15,7 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
-import { X, Image } from 'lucide-react'
+import { X, Image, SlidersHorizontal } from 'lucide-react'
 
 const fmt = (n: number | string) =>
   `£${Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -43,6 +43,22 @@ export default function ExpensesPage() {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [descriptionSearch, setDescriptionSearch] = useState('')
+  const [amountMin, setAmountMin] = useState('')
+  const [amountMax, setAmountMax] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filtersRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!filtersOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+        setFiltersOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [filtersOpen])
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -180,9 +196,37 @@ export default function ExpensesPage() {
     }).filter((c) => c.count > 0).sort((a, b) => b.total - a.total)
   }, [categories, expenses])
 
+  // Text search (description or category) + amount range, on top of the
+  // already category/date-filtered rows from the server — there is no backend
+  // search-by-description or amount-range param wired up here.
+  const filteredExpenses = useMemo(() => {
+    const q = descriptionSearch.trim().toLowerCase()
+    const min = amountMin.trim() === '' ? null : Number(amountMin)
+    const max = amountMax.trim() === '' ? null : Number(amountMax)
+    return expenses.filter((e) => {
+      const amount = Number(e.amount)
+      if (min !== null && !Number.isNaN(min) && amount < min) return false
+      if (max !== null && !Number.isNaN(max) && amount > max) return false
+      if (!q) return true
+      const description = (e.description || '').toLowerCase()
+      const category = (e.category?.categoryName || '').toLowerCase()
+      return description.includes(q) || category.includes(q)
+    })
+  }, [expenses, descriptionSearch, amountMin, amountMax])
+
   const totalFilteredExpense = useMemo(() => {
-    return expenses.reduce((acc, e) => acc + Number(e.amount), 0)
-  }, [expenses])
+    return filteredExpenses.reduce((acc, e) => acc + Number(e.amount), 0)
+  }, [filteredExpenses])
+
+  // Counts only the controls that live inside the Filters popover — the
+  // search box sits outside it now, so it is tracked separately.
+  const popoverFilterCount = [
+    selectedCategory !== 'All',
+    Boolean(startDate),
+    Boolean(endDate),
+    Boolean(amountMin),
+    Boolean(amountMax),
+  ].filter(Boolean).length
 
   const handleOpenReceiptPreview = async (url: string) => {
     // Receipts are served from an authenticated endpoint, so fetch them through
@@ -263,42 +307,141 @@ export default function ExpensesPage() {
         ))}
       </div>
 
-      {/* Filters bar */}
-      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl p-4 bg-card flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-48">
-            <option value="All">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.categoryName}
-              </option>
-            ))}
-          </Select>
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
-          <span className="text-slate-400 text-xs">to</span>
-          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
-          {(startDate || endDate || selectedCategory !== 'All') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setStartDate('')
-                setEndDate('')
-                setSelectedCategory('All')
-              }}
-            >
-              Clear Filters
-            </Button>
-          )}
-        </div>
-        <div className="text-sm font-semibold text-slate-500 font-sans">
-          Total Filtered: <span className="text-slate-950 dark:text-white text-base font-bold">{fmt(totalFilteredExpense)}</span>
-        </div>
-      </div>
-
       {/* Expenses Table list */}
       <Card className="shadow-sm border-slate-200 dark:border-slate-800">
         <CardContent className="p-0">
+          {/* Filters — search stays visible; category, date range and amount
+              range collapse into a dropdown so the toolbar stays compact. Kept
+              inside the card, above the table, like the other list pages. */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 px-6 py-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Input
+                placeholder="Search expenses..."
+                value={descriptionSearch}
+                onChange={(e) => setDescriptionSearch(e.target.value)}
+                className="w-64"
+              />
+              <div ref={filtersRef} className="relative">
+                <Button
+                  variant="outline"
+                  onClick={() => setFiltersOpen((open) => !open)}
+                  className="gap-2"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  Filters
+                  {popoverFilterCount > 0 && (
+                    <Badge variant="default" className="ml-1 px-1.5 py-0 text-[10px] leading-4">
+                      {popoverFilterCount}
+                    </Badge>
+                  )}
+                </Button>
+
+                {filtersOpen && (
+                  <div className="absolute z-20 mt-2 w-80 rounded-2xl border border-slate-200 dark:border-slate-800 bg-card p-4 shadow-lg space-y-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                        Category
+                      </label>
+                      <Select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
+                        <option value="All">All Categories</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.categoryName}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                        Date Range
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">From</label>
+                          <Input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="min-w-0"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">To</label>
+                          <Input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="min-w-0"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                        Amount (£)
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="Min"
+                          value={amountMin}
+                          onChange={(e) => setAmountMin(e.target.value)}
+                          className="min-w-0"
+                        />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="Max"
+                          value={amountMax}
+                          onChange={(e) => setAmountMax(e.target.value)}
+                          className="min-w-0"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={popoverFilterCount === 0}
+                        onClick={() => {
+                          setStartDate('')
+                          setEndDate('')
+                          setSelectedCategory('All')
+                          setAmountMin('')
+                          setAmountMax('')
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                      <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                        Done
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {(descriptionSearch || popoverFilterCount > 0) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStartDate('')
+                    setEndDate('')
+                    setSelectedCategory('All')
+                    setDescriptionSearch('')
+                    setAmountMin('')
+                    setAmountMax('')
+                  }}
+                >
+                  Clear All
+                </Button>
+              )}
+            </div>
+            <div className="text-sm font-semibold text-slate-500 font-sans">
+              Total Filtered: <span className="text-slate-950 dark:text-white text-base font-bold">{fmt(totalFilteredExpense)}</span>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[45rem] text-left text-sm">
               <thead>
@@ -312,14 +455,14 @@ export default function ExpensesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
-                {expenses.length === 0 ? (
+                {filteredExpenses.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-slate-400">
                       No expense records found matching current query.
                     </td>
                   </tr>
                 ) : (
-                  expenses.map((exp) => (
+                  filteredExpenses.map((exp) => (
                     <tr key={exp.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10">
                       <td className="p-4">
                         <Badge className={`border ${getCategoryBadgeClass(exp.category?.categoryName || '')}`}>

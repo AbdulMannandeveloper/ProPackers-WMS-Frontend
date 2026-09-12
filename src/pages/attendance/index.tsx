@@ -70,6 +70,11 @@ export default function AttendancePage() {
   // Employee analytics drawer
   const [analyticsUser, setAnalyticsUser] = useState<{ id: string; name: string } | null>(null)
 
+  // Table filters (admin daily roster + employee's own history)
+  const [rosterSearch, setRosterSearch] = useState('')
+  const [rosterStatusFilter, setRosterStatusFilter] = useState('')
+  const [myLogsStatusFilter, setMyLogsStatusFilter] = useState('')
+
   // Edit Form Fields
   const [editLogin, setEditLogin] = useState('')
   const [editLogout, setEditLogout] = useState('')
@@ -435,6 +440,27 @@ export default function AttendancePage() {
     })
   }, [users, adminDayRecords])
 
+  const filteredRosterData = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase()
+    // Effective status per row, including the two computed states (holiday /
+    // absent) that only exist once a record is missing — needed so the status
+    // filter can match what the badge actually shows.
+    const effectiveStatus = (record: AttendanceLog | undefined) =>
+      record ? record.status : selectedDateIsHoliday ? 'holiday' : 'absent'
+    return adminEmployeeTableData.filter(({ user, record }) => {
+      if (rosterStatusFilter && effectiveStatus(record) !== rosterStatusFilter) return false
+      if (!q) return true
+      const name = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase()
+      const email = (user.email || '').toLowerCase()
+      return name.includes(q) || email.includes(q)
+    })
+  }, [adminEmployeeTableData, rosterSearch, rosterStatusFilter, selectedDateIsHoliday])
+
+  const filteredMyLogs = useMemo(() => {
+    if (!myLogsStatusFilter) return logs
+    return logs.filter((l) => l.status === myLogsStatusFilter)
+  }, [logs, myLogsStatusFilter])
+
   const formatTime = (isoString?: string | null) => {
     if (!isoString) return '—'
     return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -557,10 +583,31 @@ export default function AttendancePage() {
               <CardDescription>Your chronological check-in and check-out logs history.</CardDescription>
             </CardHeader>
             <CardContent>
+              {logs.length > 0 && (
+                <div className="flex items-center gap-3 mb-4">
+                  <Select
+                    value={myLogsStatusFilter}
+                    onChange={(e) => setMyLogsStatusFilter(e.target.value)}
+                    className="max-w-40"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="on-time">On Time</option>
+                    <option value="late">Late</option>
+                    <option value="leave">Leave</option>
+                  </Select>
+                  {myLogsStatusFilter && (
+                    <Button variant="ghost" size="sm" onClick={() => setMyLogsStatusFilter('')}>
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              )}
               {loading ? (
                 <div className="py-4 text-center text-sm text-slate-500">Loading history...</div>
               ) : logs.length === 0 ? (
                 <div className="py-8 text-center text-sm text-slate-400">No shift records found.</div>
+              ) : filteredMyLogs.length === 0 ? (
+                <div className="py-8 text-center text-sm text-slate-400">No records match the selected filter.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[38rem] text-left text-sm">
@@ -574,7 +621,7 @@ export default function AttendancePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {logs.map((log) => (
+                      {filteredMyLogs.map((log) => (
                         <tr key={log.id}>
                           <td className="py-3 font-medium">{log.date ? new Date(log.date).toLocaleDateString() : '—'}</td>
                           <td className="py-3">{formatTime(log.loginTimestamp)}</td>
@@ -781,10 +828,49 @@ export default function AttendancePage() {
               </div>
             </CardHeader>
             <CardContent>
+              {adminEmployeeTableData.length > 0 && (
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center mb-4">
+                  <Input
+                    placeholder="Search by employee name or email..."
+                    value={rosterSearch}
+                    onChange={(e) => setRosterSearch(e.target.value)}
+                    className="max-w-xs"
+                  />
+                  <Select
+                    value={rosterStatusFilter}
+                    onChange={(e) => setRosterStatusFilter(e.target.value)}
+                    className="max-w-48"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="on-time">On Time</option>
+                    <option value="late">Late</option>
+                    <option value="leave">Leave</option>
+                    {selectedDateIsHoliday ? (
+                      <option value="holiday">Holiday</option>
+                    ) : (
+                      <option value="absent">Absent</option>
+                    )}
+                  </Select>
+                  {(rosterSearch || rosterStatusFilter) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRosterSearch('')
+                        setRosterStatusFilter('')
+                      }}
+                    >
+                      Clear Filters
+                    </Button>
+                  )}
+                </div>
+              )}
               {loading ? (
                 <div className="py-8 text-center text-sm text-slate-500">Loading daily database...</div>
               ) : adminEmployeeTableData.length === 0 ? (
                 <div className="py-8 text-center text-sm text-slate-400">No active employees found to display.</div>
+              ) : filteredRosterData.length === 0 ? (
+                <div className="py-8 text-center text-sm text-slate-400">No employees match the selected filters.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[45rem] text-left text-sm">
@@ -799,7 +885,7 @@ export default function AttendancePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {adminEmployeeTableData.map(({ user, record }) => {
+                      {filteredRosterData.map(({ user, record }) => {
                         const name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email
                         return (
                         <tr key={user.id}>
