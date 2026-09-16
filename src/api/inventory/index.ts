@@ -95,9 +95,20 @@ export const getLedgerWithFilters = (params: {
   )
 }
 
-export const getDailyCheckoutSummary = (date?: string): Promise<any[]> => {
-  const query = date ? `?date=${date}` : ''
-  return httpClient({ method: 'GET', url: `${BASE}/daily-checkout-summary${query}` })
+export const getDailyCheckoutSummary = (params: {
+  startDate?: string
+  endDate?: string
+  clientId?: string
+} = {}): Promise<any[]> => {
+  return httpClient({
+    method: 'GET',
+    url: `${BASE}/daily-checkout-summary`,
+    params: {
+      startDate: params.startDate,
+      endDate: params.endDate,
+      clientId: params.clientId || undefined,
+    },
+  })
 }
 
 export const createInventoryLedgerEntry = (payload: {

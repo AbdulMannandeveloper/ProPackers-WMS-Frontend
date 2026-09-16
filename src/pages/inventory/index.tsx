@@ -140,7 +140,10 @@ export default function InventoryPage() {
   const [auditActionFilter, setAuditActionFilter] = useState('')
 
   // Daily Checkout tab (US-053/054)
-  const [dailyCheckoutDate, setDailyCheckoutDate] = useState(() => new Date().toISOString().split('T')[0])
+  const today = new Date().toISOString().split('T')[0]
+  const [dailyCheckoutStartDate, setDailyCheckoutStartDate] = useState(today)
+  const [dailyCheckoutEndDate, setDailyCheckoutEndDate] = useState(today)
+  const [dailyCheckoutClientFilter, setDailyCheckoutClientFilter] = useState('')
   const [dailyCheckoutData, setDailyCheckoutData] = useState<any[]>([])
   const [dailyCheckoutLoading, setDailyCheckoutLoading] = useState(false)
 
@@ -650,10 +653,14 @@ export default function InventoryPage() {
   }
 
   // US-053/054: Load daily checkout summary
-  const loadDailyCheckout = async (date: string) => {
+  const loadDailyCheckout = async () => {
     setDailyCheckoutLoading(true)
     try {
-      const data = await inventoryApi.getDailyCheckoutSummary(date)
+      const data = await inventoryApi.getDailyCheckoutSummary({
+        startDate: dailyCheckoutStartDate,
+        endDate: dailyCheckoutEndDate,
+        clientId: dailyCheckoutClientFilter,
+      })
       setDailyCheckoutData(Array.isArray(data) ? data : [])
     } catch (err: any) {
       showToast(err?.response?.data?.error || err?.message || 'Failed to load daily checkout data.', 'error')
@@ -665,9 +672,79 @@ export default function InventoryPage() {
 
   useEffect(() => {
     if (activeTab === 'daily-checkout') {
-      void loadDailyCheckout(dailyCheckoutDate)
+      void loadDailyCheckout()
     }
-  }, [activeTab, dailyCheckoutDate])
+  }, [activeTab, dailyCheckoutStartDate, dailyCheckoutEndDate, dailyCheckoutClientFilter])
+
+  // US-053/054: Daily checkout summary as a PDF report
+  const handleGenerateDailyCheckoutPDF = () => {
+    const doc = new jsPDF({ orientation: 'landscape' })
+
+    doc.setFontSize(18)
+    doc.setTextColor(15, 23, 42)
+    doc.text('Pro Packers UK — Daily Checkout Summary', 14, 20)
+
+    doc.setFontSize(10)
+    doc.setTextColor(100, 116, 139)
+    const filterSummary: string[] = [
+      dailyCheckoutStartDate === dailyCheckoutEndDate
+        ? `Date: ${dailyCheckoutStartDate}`
+        : `From: ${dailyCheckoutStartDate} | To: ${dailyCheckoutEndDate}`,
+    ]
+    const selectedClient = clients.find((c) => c.id === dailyCheckoutClientFilter)
+    filterSummary.push(
+      `Company: ${dailyCheckoutClientFilter ? selectedClient?.companyName || dailyCheckoutClientFilter : 'All companies'}`,
+    )
+    doc.text(`Filters: ${filterSummary.join(' | ')}`, 14, 28)
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 34)
+
+    const tableData = dailyCheckoutData.flatMap((group: any) => {
+      const company = group.companyName || group.clientId || 'Unknown Client'
+      const items = Array.isArray(group.items) ? group.items : []
+      return items.map((it: any) => [
+        company,
+        it.timestamp ? new Date(it.timestamp).toLocaleString() : '—',
+        it.skuCode || '—',
+        it.productName || '—',
+        String(it.quantity ?? 0),
+        it.performedBy || '—',
+        it.shipmentId || '—',
+      ])
+    })
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Company', 'Timestamp', 'SKU', 'Product', 'Qty', 'Checked Out By', 'Shipment']],
+      body: tableData,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [15, 118, 110] },
+    })
+
+    const totalUnits = dailyCheckoutData.reduce(
+      (sum: number, group: any) =>
+        sum +
+        (Array.isArray(group.items) ? group.items : []).reduce(
+          (s: number, it: any) => s + (it.quantity || 0),
+          0,
+        ),
+      0,
+    )
+    const finalY = (doc as any).lastAutoTable?.finalY || 60
+    doc.setFontSize(10)
+    doc.setTextColor(15, 23, 42)
+    doc.text(
+      `Summary — Total Checked Out: ${totalUnits} units | Lines: ${tableData.length} | Companies: ${dailyCheckoutData.length}`,
+      14,
+      finalY + 10,
+    )
+
+    const fileSuffix =
+      dailyCheckoutStartDate === dailyCheckoutEndDate
+        ? dailyCheckoutStartDate
+        : `${dailyCheckoutStartDate}_to_${dailyCheckoutEndDate}`
+    doc.save(`Pro_Packers_UK_Daily_Checkout_${fileSuffix}.pdf`)
+    showToast('PDF report generated and downloaded.')
+  }
 
   // US-102: Load system audit logs
   const loadAuditLogs = async () => {
@@ -1319,18 +1396,66 @@ export default function InventoryPage() {
               {/* TAB 4: DAILY CHECKOUT SUMMARY (US-053/054) */}
               {activeTab === 'daily-checkout' && (
                 <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Start Date</label>
                       <Input
                         type="date"
-                        value={dailyCheckoutDate}
-                        onChange={(e) => setDailyCheckoutDate(e.target.value)}
-                        className="max-w-xs"
+                        value={dailyCheckoutStartDate}
+                        onChange={(e) => setDailyCheckoutStartDate(e.target.value)}
                       />
                     </div>
-                    <Button variant="secondary" size="sm" onClick={() => loadDailyCheckout(dailyCheckoutDate)} className="mt-4 sm:mt-0">
-                      Refresh
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">End Date</label>
+                      <Input
+                        type="date"
+                        value={dailyCheckoutEndDate}
+                        onChange={(e) => setDailyCheckoutEndDate(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Company</label>
+                      <Select
+                        value={dailyCheckoutClientFilter}
+                        onChange={(e) => setDailyCheckoutClientFilter(e.target.value)}
+                      >
+                        <option value="">All Companies</option>
+                        {clients.map((c) => (
+                          <option key={c.id} value={c.id}>{c.companyName}</option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => loadDailyCheckout()}>
+                        Refresh
+                      </Button>
+                      {(dailyCheckoutClientFilter || dailyCheckoutStartDate !== dailyCheckoutEndDate) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setDailyCheckoutClientFilter('')
+                            setDailyCheckoutStartDate(today)
+                            setDailyCheckoutEndDate(today)
+                          }}
+                        >
+                          Clear Filters
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-500">
+                      {dailyCheckoutData.length} {dailyCheckoutData.length === 1 ? 'company' : 'companies'} shown
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleGenerateDailyCheckoutPDF}
+                      disabled={dailyCheckoutData.length === 0}
+                    >
+                      Generate PDF Report
                     </Button>
                   </div>
 
@@ -1338,7 +1463,11 @@ export default function InventoryPage() {
                     <div className="py-8 text-center text-slate-500">Loading daily checkout data...</div>
                   ) : dailyCheckoutData.length === 0 ? (
                     <div className="py-8 text-center text-slate-400">
-                      No checkout transactions found for {new Date(dailyCheckoutDate).toLocaleDateString('en-GB', { dateStyle: 'long' })}.
+                      No checkout transactions found for{' '}
+                      {dailyCheckoutStartDate === dailyCheckoutEndDate
+                        ? new Date(dailyCheckoutStartDate).toLocaleDateString('en-GB', { dateStyle: 'long' })
+                        : `${new Date(dailyCheckoutStartDate).toLocaleDateString('en-GB', { dateStyle: 'long' })} — ${new Date(dailyCheckoutEndDate).toLocaleDateString('en-GB', { dateStyle: 'long' })}`}
+                      {dailyCheckoutClientFilter ? ' for the selected company' : ''}.
                     </div>
                   ) : (
                     <div className="space-y-6">
@@ -1350,7 +1479,7 @@ export default function InventoryPage() {
                             <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-3 flex items-center justify-between">
                               <div className="flex items-center gap-3">
                                 <span className="font-bold text-slate-800 dark:text-slate-200">
-                                  {group.clientName || group.clientId || 'Unknown Client'}
+                                  {group.companyName || group.clientId || 'Unknown Client'}
                                 </span>
                                 <Badge variant="secondary">{items.length} items</Badge>
                               </div>
@@ -1373,10 +1502,14 @@ export default function InventoryPage() {
                                     <td className="px-4 py-3">{it.productName || '—'}</td>
                                     <td className="px-4 py-3 text-center font-bold">{it.quantity} units</td>
                                     <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                                      {it.userName || '—'}
+                                      {it.performedBy || '—'}
                                     </td>
                                     <td className="px-4 py-3 text-right text-xs font-mono text-slate-500">
-                                      {it.timestamp ? new Date(it.timestamp).toLocaleTimeString() : '—'}
+                                      {it.timestamp
+                                        ? dailyCheckoutStartDate === dailyCheckoutEndDate
+                                          ? new Date(it.timestamp).toLocaleTimeString()
+                                          : new Date(it.timestamp).toLocaleString()
+                                        : '—'}
                                     </td>
                                   </tr>
                                 ))}
