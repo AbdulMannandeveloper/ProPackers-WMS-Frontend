@@ -144,6 +144,28 @@ export const grandTotal = (invoice: {
 export const deleteLineItem = (invoiceId: string, lineItemId: string): Promise<{ message: string }> =>
   httpClient({ method: 'DELETE', url: `${BASE}/${invoiceId}/line-items/${lineItemId}` })
 
+/**
+ * Commits a batch of staged line-item and tax edits in one call. The point of
+ * batching: on an APPROVED invoice each of these changes re-renders the PDF
+ * and emails the client, so five staged edits applied one at a time would mean
+ * five emails. This is the edit screen's single commit point instead.
+ */
+export const applyInvoiceEdits = (
+  id: string,
+  payload: {
+    addLineItems?: Array<{
+      description: string
+      quantity: number
+      unitPrice: number
+      dateOfService?: string
+    }>
+    removeLineItemIds?: string[]
+    /** Omit to leave tax untouched. */
+    taxApplied?: boolean
+  }
+): Promise<MonthlyInvoice> =>
+  httpClient({ method: 'PUT', url: `${BASE}/${id}/edit`, data: payload })
+
 export default {
   getAllInvoices,
   getInvoicesByClientId,
@@ -159,6 +181,7 @@ export default {
   getTaxRate,
   setTaxRate,
   setInvoiceTax,
+  applyInvoiceEdits,
   grandTotal,
   issuingCompany,
 }

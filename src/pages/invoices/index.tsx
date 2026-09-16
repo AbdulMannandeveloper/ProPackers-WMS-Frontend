@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuthStore } from '@/stores/auth'
 import { invoices as invoicesApi, clientServices as clientServicesApi } from '@/api'
-import type { MonthlyInvoice, InvoiceLineItem } from '@/api/invoices'
+import type { MonthlyInvoice } from '@/api/invoices'
 import {
   Button,
   Card,
@@ -11,6 +12,7 @@ import {
   Select,
   Modal,
 } from '@/components/Shared Components'
+import { errorMessage } from '@/lib/errors'
 import { SlidersHorizontal } from 'lucide-react'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -29,6 +31,12 @@ const statusConfig: Record<string, { label: string; cls: string }> = {
   APPROVED: { label: 'Approved', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200' },
   PAID: { label: 'Paid', cls: 'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-200' },
 }
+
+// Line items and tax stay open on an APPROVED invoice so an admin can correct
+// one after the fact — the API re-renders the PDF and re-notifies the client
+// on every such change. PAID is frozen, and the invoice itself (as opposed to
+// its contents) is only ever deletable while still DRAFT.
+const isContentEditable = (status: string) => status === 'DRAFT' || status === 'APPROVED'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -53,7 +61,8 @@ export default function InvoicesPage() {
   // ── Modals ──
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [manualChargeModalOpen, setManualChargeModalOpen] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [confirmApplyOpen, setConfirmApplyOpen] = useState(false)
   const [selectedInvoice, setSelectedInvoice] = useState<MonthlyInvoice | null>(null)
 
   // ── Filters ──
@@ -77,21 +86,29 @@ export default function InvoicesPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [filtersOpen])
 
-  // ── Manual Charge Form ──
+  // ── Edit Invoice (staged changes, form for adding a line item) ──
   const [chargeDescription, setChargeDescription] = useState('')
   const [chargeQty, setChargeQty] = useState(1)
   const [chargePrice, setChargePrice] = useState<number | ''>('')
   const [chargeDate, setChargeDate] = useState(new Date().toISOString().split('T')[0])
-  const [chargeSaving, setChargeSaving] = useState(false)
   // The platform tax rate. Held here so the table can show what ticking the box
   // would add, before it is ticked.
   const [taxRate, setTaxRate] = useState<number>(20)
   const [taxRateDraft, setTaxRateDraft] = useState<string>('')
   const [savingRate, setSavingRate] = useState(false)
-  const [togglingTax, setTogglingTax] = useState<string | null>(null)
 
   const [clientServices, setClientServices] = useState<any[]>([])
   const [selectedClientServiceId, setSelectedClientServiceId] = useState('')
+
+  // Nothing here reaches the API until "Apply Changes" is confirmed — staged
+  // locally so an admin editing an already-approved invoice does not trigger a
+  // PDF re-render and a client email for every checkbox click.
+  const [pendingRemovedIds, setPendingRemovedIds] = useState<Set<string>>(new Set())
+  const [pendingNewItems, setPendingNewItems] = useState<
+    Array<{ tempId: string; description: string; quantity: number; unitPrice: number; dateOfService: string }>
+  >([])
+  const [pendingTaxApplied, setPendingTaxApplied] = useState(false)
+  const [applyingChanges, setApplyingChanges] = useState(false)
 
   /** Changes the rate future invoices are taxed at. Already-taxed ones keep theirs. */
   const handleSaveTaxRate = async () => {
@@ -119,21 +136,6 @@ export default function InvoicesPage() {
     }
   }
 
-  /** Applies or removes tax on one draft invoice. */
-  const handleToggleTax = async (invoice: MonthlyInvoice, applied: boolean) => {
-    setTogglingTax(invoice.id)
-    try {
-      await invoicesApi.setInvoiceTax(invoice.id, applied)
-      await loadData()
-    } catch (err: any) {
-      showToast(
-        err?.response?.data?.error || err?.message || 'Could not change the tax.',
-        'error',
-      )
-    } finally {
-      setTogglingTax(null)
-    }
-  }
 
   // ── Load ──
   const loadData = async () => {
@@ -276,7 +278,7 @@ export default function InvoicesPage() {
   }
 
   useEffect(() => {
-    if (manualChargeModalOpen && selectedInvoice?.clientId) {
+    if (editModalOpen && selectedInvoice?.clientId) {
       const fetchClientServices = async () => {
         try {
           const res = await clientServicesApi.getClientServicesByClientId(selectedInvoice.clientId)
@@ -290,7 +292,7 @@ export default function InvoicesPage() {
       setClientServices([])
       setSelectedClientServiceId('')
     }
-  }, [manualChargeModalOpen, selectedInvoice])
+  }, [editModalOpen, selectedInvoice])
 
   const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value
@@ -307,48 +309,115 @@ export default function InvoicesPage() {
     }
   }
 
-  const handleAddManualCharge = async (e: React.FormEvent) => {
-    e.preventDefault()
+  /** Opens the edit modal with a clean slate of staged changes, from the invoice as it is now. */
+  const handleOpenEdit = () => {
     if (!selectedInvoice) return
+    setPendingRemovedIds(new Set())
+    setPendingNewItems([])
+    setPendingTaxApplied(Boolean(selectedInvoice.taxApplied))
+    setChargeDescription('')
+    setChargeQty(1)
+    setChargePrice('')
+    setChargeDate(new Date().toISOString().split('T')[0])
+    setSelectedClientServiceId('')
+    setEditModalOpen(true)
+  }
+
+  /** Stages a new line item locally. Nothing is sent until Apply Changes is confirmed. */
+  const handleStageNewItem = () => {
     if (!chargeDescription.trim() || !chargePrice || chargeQty < 1) {
       showToast('Please fill in all charge fields.', 'error')
       return
     }
-    setChargeSaving(true)
-    try {
-      await invoicesApi.createLineItem(selectedInvoice.id, {
+    setPendingNewItems((prev) => [
+      ...prev,
+      {
+        tempId: `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         description: chargeDescription.trim(),
         quantity: chargeQty,
         unitPrice: Number(chargePrice),
         dateOfService: chargeDate,
-      })
-      showToast('Manual charge added to invoice.')
-      setManualChargeModalOpen(false)
-      setChargeDescription('')
-      setChargeQty(1)
-      setChargePrice('')
-      setSelectedClientServiceId('')
-      // Reload so modal gets fresh line items
-      const updated = await invoicesApi.getInvoiceById(selectedInvoice.id)
-      setSelectedInvoice(updated)
-      await loadData()
-    } catch (err: any) {
-      showToast(err?.response?.data?.error || err?.message || 'Failed to add charge.', 'error')
-    } finally {
-      setChargeSaving(false)
-    }
+      },
+    ])
+    setChargeDescription('')
+    setChargeQty(1)
+    setChargePrice('')
+    setSelectedClientServiceId('')
   }
 
-  const handleDeleteLineItem = async (item: InvoiceLineItem) => {
+  const handleDiscardNewItem = (tempId: string) => {
+    setPendingNewItems((prev) => prev.filter((it) => it.tempId !== tempId))
+  }
+
+  /** Marks an existing item for removal, or un-marks it — nothing is deleted yet. */
+  const handleToggleRemoveItem = (itemId: string) => {
+    setPendingRemovedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
+  }
+
+  const editOriginalItems = selectedInvoice?.lineItems ?? []
+  const editRemainingItems = editOriginalItems.filter((it) => !pendingRemovedIds.has(it.id))
+  const editSubtotal =
+    editRemainingItems.reduce((sum, it) => sum + Number(it.totalPrice), 0) +
+    pendingNewItems.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
+  const editTaxChanged = pendingTaxApplied !== Boolean(selectedInvoice?.taxApplied)
+  // Newly ticked on: preview at the current platform rate, since that is the
+  // rate the API will freeze onto the invoice. Left ticked on: keep previewing
+  // at whatever rate it was already issued at, since re-applying does not
+  // move it — mirrors what setInvoiceTax / applyInvoiceEdits actually do.
+  const editEffectiveTaxRate = editTaxChanged ? taxRate : Number(selectedInvoice?.taxRate ?? taxRate)
+  const editTaxAmount = pendingTaxApplied
+    ? Number(((editSubtotal * editEffectiveTaxRate) / 100).toFixed(2))
+    : 0
+  const editHasChanges = pendingRemovedIds.size > 0 || pendingNewItems.length > 0 || editTaxChanged
+
+  const handleRequestApply = () => {
+    if (!editHasChanges) return
+    setConfirmApplyOpen(true)
+  }
+
+  /** The single commit point: everything staged above goes to the API in one call. */
+  const handleConfirmApply = async () => {
     if (!selectedInvoice) return
+    const wasApproved = selectedInvoice.status === 'APPROVED'
+    setApplyingChanges(true)
     try {
-      await invoicesApi.deleteLineItem(selectedInvoice.id, item.id)
-      showToast('Line item removed.')
-      const updated = await invoicesApi.getInvoiceById(selectedInvoice.id)
+      // The response already IS the fresh invoice — using it directly means a
+      // hiccup in a follow-up call below can never masquerade as this having
+      // failed when it did not.
+      const updated = await invoicesApi.applyInvoiceEdits(selectedInvoice.id, {
+        addLineItems: pendingNewItems.map(({ tempId: _tempId, ...rest }) => rest),
+        removeLineItemIds: Array.from(pendingRemovedIds),
+        taxApplied: editTaxChanged ? pendingTaxApplied : undefined,
+      })
+
+      showToast(
+        wasApproved ? 'Invoice updated — the client has been sent a revised invoice.' : 'Invoice updated.',
+      )
+      setConfirmApplyOpen(false)
+      setEditModalOpen(false)
+      setPendingRemovedIds(new Set())
+      setPendingNewItems([])
       setSelectedInvoice(updated)
-      await loadData()
-    } catch (err: any) {
-      showToast(err?.response?.data?.error || err?.message || 'Failed to remove line item.', 'error')
+
+      // Best-effort refresh of the table behind the modal. The edit itself
+      // already succeeded and is reflected above regardless of this.
+      try {
+        await loadData()
+      } catch (refreshErr) {
+        console.error('Failed to refresh invoice list after applying changes:', refreshErr)
+      }
+    } catch (err: unknown) {
+      // Logged as well as shown: the toast is transient, and the raw error is
+      // what says whether the request was refused, rejected, or never arrived.
+      console.error('Applying invoice changes failed:', err)
+      showToast(errorMessage(err, 'Failed to apply changes.'), 'error')
+    } finally {
+      setApplyingChanges(false)
     }
   }
 
@@ -357,20 +426,26 @@ export default function InvoicesPage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto relative">
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed top-4 right-4 z-[100] rounded-2xl border p-4 shadow-xl flex items-center gap-3 transition-all duration-300 ${
-            toast.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/90 dark:border-emerald-800 dark:text-emerald-100'
-              : 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/90 dark:border-rose-800 dark:text-rose-100'
-          }`}
-        >
-          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${toast.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-          <span className="text-sm font-medium">{toast.message}</span>
-          <button type="button" onClick={() => setToast(null)} className="ml-4 text-slate-400 hover:text-slate-600 font-bold text-base">×</button>
-        </div>
-      )}
+      {/* Toast — portalled to the body because the dashboard layout wraps page
+          content in `relative z-10`, which is a stacking context. Rendered in
+          place, no z-index could lift this above a Modal (itself portalled to
+          the body at z-50), so every error raised from inside a modal was
+          painted underneath its backdrop and never seen. */}
+      {toast &&
+        createPortal(
+          <div
+            className={`fixed top-4 right-4 z-200 rounded-2xl border p-4 shadow-xl flex items-center gap-3 transition-all duration-300 ${
+              toast.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/90 dark:border-emerald-800 dark:text-emerald-100'
+                : 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/90 dark:border-rose-800 dark:text-rose-100'
+            }`}
+          >
+            <div className={`w-2 h-2 rounded-full shrink-0 ${toast.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button type="button" onClick={() => setToast(null)} className="ml-4 text-slate-400 hover:text-slate-600 font-bold text-base">×</button>
+          </div>,
+          document.body,
+        )}
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -453,8 +528,8 @@ export default function InvoicesPage() {
             {savingRate ? 'Saving…' : 'Save rate'}
           </Button>
           <p className="text-xs text-slate-400 flex-1 min-w-[16rem]">
-            Applied per invoice with the Tax box below, while it is still a
-            draft. Invoices already taxed keep the rate they were issued at.
+            Applied per invoice with the Tax box below, while it is draft or
+            approved. Invoices already taxed keep the rate they were issued at.
           </p>
         </div>
       )}
@@ -602,7 +677,7 @@ export default function InvoicesPage() {
             <div className="py-16 text-center text-slate-400">Loading billing records...</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[68rem] text-left text-sm">
+              <table className="w-full min-w-272 text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 text-slate-500">
                     <th className="px-6 py-4 font-semibold">Client</th>
@@ -646,24 +721,9 @@ export default function InvoicesPage() {
                             {fmt(inv.totalAmount)}
                           </td>
                           <td className="px-6 py-4 text-center">
-                            {/* Only while DRAFT: once approved the invoice has
-                                been sent, and the amount asked for must not move
-                                underneath the client. */}
-                            {inv.status === 'DRAFT' && isAdmin ? (
-                              <label className="inline-flex items-center gap-2 cursor-pointer [@media(pointer:coarse)]:py-2">
-                                <input
-                                  type="checkbox"
-                                  className="check-target"
-                                  checked={Boolean(inv.taxApplied)}
-                                  disabled={togglingTax === inv.id}
-                                  aria-label={`Apply ${taxRate}% tax to this invoice`}
-                                  onChange={(e) => void handleToggleTax(inv, e.target.checked)}
-                                />
-                                <span className="text-xs text-slate-500 tabular-nums">
-                                  {inv.taxApplied ? fmt(inv.taxAmount ?? 0) : `${taxRate}%`}
-                                </span>
-                              </label>
-                            ) : Number(inv.taxAmount ?? 0) > 0 ? (
+                            {/* Read-only here — tax is only ever changed from
+                                inside Edit Invoice, staged and confirmed. */}
+                            {Number(inv.taxAmount ?? 0) > 0 ? (
                               <span className="text-xs text-slate-500 tabular-nums">
                                 {fmt(inv.taxAmount ?? 0)}
                                 {inv.taxRate != null && (
@@ -723,9 +783,9 @@ export default function InvoicesPage() {
                   Download PDF
                 </Button>
               )}
-              {isAdmin && selectedInvoice?.status === 'DRAFT' && (
-                <Button onClick={() => setManualChargeModalOpen(true)} variant="secondary">
-                  + Add Manual Charge
+              {isAdmin && selectedInvoice && isContentEditable(selectedInvoice.status) && (
+                <Button onClick={handleOpenEdit} variant="secondary">
+                  Edit Invoice
                 </Button>
               )}
               {isAdmin && selectedInvoice?.status === 'DRAFT' && (
@@ -792,7 +852,7 @@ export default function InvoicesPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Line Items</h3>
               <div className="overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-xl">
-                <table className="w-full min-w-[52rem] text-left text-sm">
+                <table className="w-full min-w-208 text-left text-sm">
                   <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 border-b border-slate-100 dark:border-slate-800">
                     <tr>
                       <th className="p-3 font-semibold">Description</th>
@@ -801,13 +861,12 @@ export default function InvoicesPage() {
                       <th className="p-3 text-center font-semibold">Qty</th>
                       <th className="p-3 text-right font-semibold">Unit Price</th>
                       <th className="p-3 text-right font-semibold">Total</th>
-                      {isAdmin && selectedInvoice.status === 'DRAFT' && <th className="p-3" />}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
                     {!selectedInvoice.lineItems || selectedInvoice.lineItems.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-4 text-center text-slate-400 text-sm">
+                        <td colSpan={6} className="p-4 text-center text-slate-400 text-sm">
                           No line items yet. Dispatch a shipment or add a manual charge.
                         </td>
                       </tr>
@@ -835,17 +894,6 @@ export default function InvoicesPage() {
                           <td className="p-3 text-center font-mono">{Number(item.quantity).toLocaleString()}</td>
                           <td className="p-3 text-right font-mono tabular-nums">{fmt(item.unitPrice)}</td>
                           <td className="p-3 text-right font-bold font-mono tabular-nums">{fmt(item.totalPrice)}</td>
-                          {isAdmin && selectedInvoice.status === 'DRAFT' && (
-                            <td className="p-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteLineItem(item)}
-                                className="text-rose-400 hover:text-rose-600 text-xs font-semibold transition-colors"
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          )}
                         </tr>
                       ))
                     )}
@@ -853,13 +901,12 @@ export default function InvoicesPage() {
                   {selectedInvoice.lineItems && selectedInvoice.lineItems.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/60">
-                        <td colSpan={isAdmin && selectedInvoice.status === 'DRAFT' ? 5 : 5} className="p-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-400">
+                        <td colSpan={5} className="p-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-400">
                           Invoice Total
                         </td>
                         <td className="p-3 text-right font-extrabold text-slate-900 dark:text-slate-100 text-base tabular-nums">
                           {fmt(selectedInvoice.totalAmount)}
                         </td>
-                        {isAdmin && selectedInvoice.status === 'DRAFT' && <td />}
                       </tr>
                     </tfoot>
                   )}
@@ -870,97 +917,293 @@ export default function InvoicesPage() {
         )}
       </Modal>
 
-      {/* ── MODAL: Add Manual Charge ──────────────────────────────────────────── */}
+      {/* ── MODAL: Edit Invoice ────────────────────────────────────────────────
+          Everything here is staged locally. Nothing reaches the API until
+          Apply Changes is confirmed in the modal below. */}
       <Modal
-        open={manualChargeModalOpen}
-        onClose={() => setManualChargeModalOpen(false)}
-        title="Add Manual Charge"
-        description="Manually bill the client for an additional service or one-off cost."
-        size="sm"
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Invoice"
+        description={
+          selectedInvoice?.status === 'APPROVED'
+            ? 'Stage changes below, then Apply Changes to commit them. This invoice is already approved — applying will regenerate its PDF and notify the client.'
+            : 'Stage changes below, then Apply Changes to commit them.'
+        }
+        size="lg"
+        contentClassName="space-y-5"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setManualChargeModalOpen(false)} disabled={chargeSaving}>
+            <Button variant="secondary" onClick={() => setEditModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" form="manual-charge-form" loading={chargeSaving}>
-              {chargeSaving ? 'Adding...' : 'Add Charge'}
+            <Button onClick={handleRequestApply} disabled={!editHasChanges}>
+              Apply Changes
             </Button>
           </div>
         }
       >
-        <form id="manual-charge-form" onSubmit={handleAddManualCharge} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-              Select Provided Service (Optional)
-            </label>
-            <Select
-              value={selectedClientServiceId}
-              onChange={handleServiceChange}
-            >
-              <option value="">-- Custom Charge (Enter Manually) --</option>
-              {clientServices.map((cs) => (
-                <option key={cs.id} value={cs.id}>
-                  {cs.service?.description || 'Service'} (£{Number(cs.chargedPrice).toFixed(2)} / {cs.unit})
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-              Description *
-            </label>
-            <Input
-              placeholder="e.g. Extra packing materials, Special handling fee"
-              value={chargeDescription}
-              onChange={(e) => setChargeDescription(e.target.value)}
-              required
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Quantity *
+        {selectedInvoice && (
+          <div className="space-y-5">
+            {/* Tax */}
+            <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Tax</p>
+                <p className="text-xs text-slate-400">
+                  {pendingTaxApplied ? `Applied at ${editEffectiveTaxRate}%` : 'Not applied'}
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="check-target"
+                  checked={pendingTaxApplied}
+                  onChange={(e) => setPendingTaxApplied(e.target.checked)}
+                />
+                <span className="text-sm text-slate-600 dark:text-slate-400">Apply tax</span>
               </label>
-              <Input
-                type="number"
-                min="1"
-                value={chargeQty}
-                onChange={(e) => setChargeQty(parseInt(e.target.value) || 1)}
-                required
-              />
             </div>
+
+            {/* Line Items */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Unit Price (£) *
-              </label>
-              <Input
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="0.00"
-                value={chargePrice}
-                onChange={(e) => setChargePrice(parseFloat(e.target.value) || '')}
-                required
-              />
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Line Items</h3>
+              <div className="overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-xl">
+                <table className="w-full min-w-208 text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 border-b border-slate-100 dark:border-slate-800">
+                    <tr>
+                      <th className="p-3 font-semibold">Description</th>
+                      <th className="p-3 font-semibold">Type</th>
+                      <th className="p-3 font-semibold">Date</th>
+                      <th className="p-3 text-center font-semibold">Qty</th>
+                      <th className="p-3 text-right font-semibold">Unit Price</th>
+                      <th className="p-3 text-right font-semibold">Total</th>
+                      <th className="p-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-900">
+                    {editOriginalItems.length === 0 && pendingNewItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-4 text-center text-slate-400 text-sm">
+                          No line items yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      <>
+                        {editOriginalItems.map((item) => {
+                          const removed = pendingRemovedIds.has(item.id)
+                          return (
+                            <tr key={item.id} className={removed ? 'opacity-40' : undefined}>
+                              <td className="p-3 text-slate-700 dark:text-slate-300 max-w-xs">
+                                <span className={`line-clamp-2 ${removed ? 'line-through' : ''}`}>
+                                  {item.description}
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    item.itemType === 'MANUAL_CHARGE'
+                                      ? 'bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-950 dark:text-violet-200'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                                  }
+                                >
+                                  {item.itemType === 'MANUAL_CHARGE' ? 'Manual' : 'Auto'}
+                                </Badge>
+                              </td>
+                              <td className="p-3 text-xs text-slate-400 font-mono whitespace-nowrap">
+                                {fmtShort(item.dateOfService)}
+                              </td>
+                              <td className="p-3 text-center font-mono">{Number(item.quantity).toLocaleString()}</td>
+                              <td className="p-3 text-right font-mono tabular-nums">{fmt(item.unitPrice)}</td>
+                              <td className="p-3 text-right font-bold font-mono tabular-nums">{fmt(item.totalPrice)}</td>
+                              <td className="p-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleRemoveItem(item.id)}
+                                  className={`text-xs font-semibold transition-colors ${
+                                    removed
+                                      ? 'text-emerald-600 hover:text-emerald-700'
+                                      : 'text-rose-400 hover:text-rose-600'
+                                  }`}
+                                >
+                                  {removed ? 'Undo' : 'Remove'}
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                        {pendingNewItems.map((item) => (
+                          <tr key={item.tempId} className="bg-emerald-50/50 dark:bg-emerald-950/20">
+                            <td className="p-3 text-slate-700 dark:text-slate-300 max-w-xs">
+                              <span className="line-clamp-2">{item.description}</span>
+                            </td>
+                            <td className="p-3">
+                              <Badge
+                                variant="secondary"
+                                className="bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200"
+                              >
+                                New
+                              </Badge>
+                            </td>
+                            <td className="p-3 text-xs text-slate-400 font-mono whitespace-nowrap">
+                              {fmtShort(item.dateOfService)}
+                            </td>
+                            <td className="p-3 text-center font-mono">{item.quantity.toLocaleString()}</td>
+                            <td className="p-3 text-right font-mono tabular-nums">{fmt(item.unitPrice)}</td>
+                            <td className="p-3 text-right font-bold font-mono tabular-nums">
+                              {fmt(item.quantity * item.unitPrice)}
+                            </td>
+                            <td className="p-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleDiscardNewItem(item.tempId)}
+                                className="text-rose-400 hover:text-rose-600 text-xs font-semibold transition-colors"
+                              >
+                                Discard
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/60">
+                      <td colSpan={6} className="p-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-400">
+                        {pendingTaxApplied ? 'Subtotal (staged)' : 'Total (staged)'}
+                      </td>
+                      <td className="p-3 text-right font-extrabold text-slate-900 dark:text-slate-100 text-base tabular-nums">
+                        {fmt(editSubtotal)}
+                      </td>
+                    </tr>
+                    {pendingTaxApplied && (
+                      <tr className="bg-slate-50/80 dark:bg-slate-900/60">
+                        <td colSpan={6} className="p-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-400">
+                          Tax
+                        </td>
+                        <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                          {fmt(editTaxAmount)}
+                        </td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Add a line item — stages into the table above, does not save yet */}
+            <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-4 space-y-3">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Add a Line Item</h3>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Select Provided Service (Optional)
+                </label>
+                <Select value={selectedClientServiceId} onChange={handleServiceChange}>
+                  <option value="">-- Custom Charge (Enter Manually) --</option>
+                  {clientServices.map((cs) => (
+                    <option key={cs.id} value={cs.id}>
+                      {cs.service?.description || 'Service'} (£{Number(cs.chargedPrice).toFixed(2)} / {cs.unit})
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Description *
+                </label>
+                <Input
+                  placeholder="e.g. Extra packing materials, Special handling fee"
+                  value={chargeDescription}
+                  onChange={(e) => setChargeDescription(e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Quantity *
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={chargeQty}
+                    onChange={(e) => setChargeQty(parseInt(e.target.value) || 1)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Unit Price (£) *
+                  </label>
+                  <Input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={chargePrice}
+                    onChange={(e) => setChargePrice(parseFloat(e.target.value) || '')}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Date of Service
+                </label>
+                <Input type="date" value={chargeDate} onChange={(e) => setChargeDate(e.target.value)} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                {chargePrice !== '' && chargeQty > 0 ? (
+                  <span className="text-xs text-slate-500">
+                    Charge total: <strong className="text-slate-800 dark:text-slate-200">{fmt(Number(chargePrice) * chargeQty)}</strong>
+                  </span>
+                ) : <span />}
+                <Button type="button" variant="secondary" size="sm" onClick={handleStageNewItem}>
+                  + Add to Changes
+                </Button>
+              </div>
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-              Date of Service
-            </label>
-            <Input
-              type="date"
-              value={chargeDate}
-              onChange={(e) => setChargeDate(e.target.value)}
-            />
+        )}
+      </Modal>
+
+      {/* ── MODAL: Confirm Invoice Changes ────────────────────────────────────── */}
+      <Modal
+        open={confirmApplyOpen}
+        onClose={() => {
+          if (!applyingChanges) setConfirmApplyOpen(false)
+        }}
+        title="Confirm Invoice Changes"
+        description="Review what is about to change before it is committed."
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setConfirmApplyOpen(false)} disabled={applyingChanges}>
+              Go Back
+            </Button>
+            <Button variant="destructive" onClick={() => void handleConfirmApply()} loading={applyingChanges}>
+              {applyingChanges ? 'Applying...' : 'Apply Changes'}
+            </Button>
           </div>
-          {chargePrice !== '' && chargeQty > 0 && (
-            <div className="rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 p-3 flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-semibold">Charge total</span>
-              <span className="font-extrabold text-slate-900 dark:text-slate-100">{fmt(Number(chargePrice) * chargeQty)}</span>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+          <ul className="list-disc pl-5 space-y-1">
+            {pendingNewItems.length > 0 && (
+              <li>{pendingNewItems.length} line item{pendingNewItems.length === 1 ? '' : 's'} will be added.</li>
+            )}
+            {pendingRemovedIds.size > 0 && (
+              <li>{pendingRemovedIds.size} line item{pendingRemovedIds.size === 1 ? '' : 's'} will be removed.</li>
+            )}
+            {editTaxChanged && <li>Tax will be {pendingTaxApplied ? 'applied' : 'removed'}.</li>}
+          </ul>
+          <p className="font-semibold text-slate-800 dark:text-slate-200">
+            New total due: {fmt(editSubtotal + editTaxAmount)}
+          </p>
+          {selectedInvoice?.status === 'APPROVED' && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900 p-3 text-amber-800 dark:text-amber-200 text-xs font-medium">
+              This invoice has already been approved and may have been sent to the client.
+              Applying these changes will regenerate the invoice PDF and email the client
+              a notice that their invoice has been revised. This cannot be undone.
             </div>
           )}
-        </form>
+        </div>
       </Modal>
 
       {/* ── MODAL: Confirm Delete ─────────────────────────────────────────────── */}
