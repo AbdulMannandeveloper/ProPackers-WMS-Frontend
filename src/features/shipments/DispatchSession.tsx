@@ -260,11 +260,7 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         shipmentItems: toShipmentItems(lines),
       })
       onDispatched({ reference, units })
-      setReference(null)
-      setLines([])
-      setTrackingId('')
-      setLastScan(null)
-      setStage('picking')
+      onDone()
     } catch (err) {
       setError(errorMessage(err, 'Could not dispatch this shipment.'))
       signal('refused')
