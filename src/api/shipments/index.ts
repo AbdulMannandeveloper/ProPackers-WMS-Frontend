@@ -55,9 +55,10 @@ export type ShipmentService = {
 export type Shipment = {
   id: string
   /**
-   * The label scanned off the parcel. This is how a shipment is identified
-   * everywhere a person looks at one — on the paperwork, on the invoice line,
-   * in the ledger. `id` is a database key and is never shown.
+   * The shipment's number, issued by the server at dispatch as
+   * `SHP-<year>-<sequence>`. This is how a shipment is identified everywhere a
+   * person looks at one — on the paperwork, on the invoice line, in the ledger.
+   * `id` is a database key and is never shown.
    */
   reference: string
   employeeId?: string | null
@@ -104,10 +105,11 @@ export const getShipmentsByClientId = (clientId: string): Promise<Shipment[]> =>
   httpClient({ method: 'GET', url: `${BASE}/client/${clientId}` })
 
 /**
- * The shipment carrying this label, or null.
+ * The shipment carrying this reference, or null.
  *
- * Asked before anything is picked. Finding out a label was already used at save
- * time would mean unpicking a pallet.
+ * No longer part of dispatch — references are issued by the server, so there is
+ * nothing to check before picking. Kept as the lookup behind searching for a
+ * shipment by the number printed on its paperwork.
  */
 export const findByReference = async (reference: string): Promise<Shipment | null> => {
   try {
@@ -130,12 +132,13 @@ export const getShipmentById = (id: string): Promise<Shipment> =>
 /**
  * Creates a shipment and dispatches it in one act.
  *
- * The client is derived from the goods, the creator from the session, and the
- * status is decided by the server — none of them are sent. `reference` is the
- * label scanned off the parcel and is required.
+ * The client is derived from the goods, the creator from the session, the
+ * status is decided by the server, and the reference is issued by the server
+ * from its own sequence — none of them are sent. A `reference` in the payload
+ * is stripped on arrival, so the created shipment's number is only knowable
+ * from what comes back.
  */
 export const createShipment = (payload: {
-  reference: string
   trackingId?: string
   shipmentItems: { productId: string; sourceLocationId: string; quantity: number }[]
 }): Promise<Shipment> =>

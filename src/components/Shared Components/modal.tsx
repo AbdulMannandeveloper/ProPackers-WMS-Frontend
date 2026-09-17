@@ -32,6 +32,43 @@ const sizeClasses: Record<ModalSize, string> = {
   full: 'max-w-[95vw]',
 }
 
+/**
+ * Reference-counted body-scroll lock, shared across every open Modal.
+ *
+ * A per-instance capture-then-restore of document.body.style.overflow breaks
+ * as soon as two Modals are open at once (Details behind Edit behind a
+ * confirmation, say): each instance's effect re-runs on every render where its
+ * `onClose` prop is a fresh closure — which an inline `onClose={() => ...}` is,
+ * on every parent render — and a re-run captures whatever the overflow happens
+ * to be at that instant, which may already be 'hidden' because a sibling modal
+ * locked it first, or momentarily '' from a sibling's own cleanup racing in the
+ * same commit. Either way, some instance's cleanup can restore the wrong value,
+ * and the page is left permanently unscrollable once every modal has closed —
+ * only a reload clears it, since nothing else resets body.style.overflow.
+ *
+ * A shared counter sidesteps this: the original value is captured only on the
+ * 0→1 transition and restored only on the 1→0 transition, so any number of
+ * effect re-runs from any number of stacked modals stay balanced.
+ */
+let scrollLockCount = 0
+let previousBodyOverflow: string | null = null
+
+const lockBodyScroll = () => {
+  if (scrollLockCount === 0) {
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+  }
+  scrollLockCount += 1
+}
+
+const unlockBodyScroll = () => {
+  scrollLockCount = Math.max(0, scrollLockCount - 1)
+  if (scrollLockCount === 0) {
+    document.body.style.overflow = previousBodyOverflow ?? ''
+    previousBodyOverflow = null
+  }
+}
+
 function Modal({
   open,
   onClose,
@@ -52,8 +89,7 @@ function Modal({
       return undefined
     }
 
-    const originalOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    lockBodyScroll()
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (closeOnEsc && event.key === 'Escape') {
@@ -65,7 +101,7 @@ function Modal({
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = originalOverflow
+      unlockBodyScroll()
     }
   }, [closeOnEsc, onClose, open])
 
