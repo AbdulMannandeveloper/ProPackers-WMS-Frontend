@@ -98,7 +98,7 @@ export default function DispatchPage() {
         onDone={close}
         onDispatched={({ reference, units }) =>
           setNotice(
-            `Shipment ${reference} dispatched — ${units} ${units === 1 ? 'unit' : 'units'}. Scan the next label to carry on.`,
+            `Shipment ${reference} dispatched — ${units} ${units === 1 ? 'unit' : 'units'}. Write ${reference} on the paperwork.`,
           )
         }
       />

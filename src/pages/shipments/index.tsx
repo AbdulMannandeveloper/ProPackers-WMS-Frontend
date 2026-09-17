@@ -606,10 +606,10 @@ export default function ShipmentsPage() {
                   ) : (
                     filteredShipments.map((s) => (
                       <tr key={s.id}>
-                        {/* The label scanned off the parcel. This column used to
-                            show eight characters of the row's uuid, which
-                            matched nothing on the parcel, the invoice or the
-                            ledger. */}
+                        {/* The reference the server issued at dispatch. This
+                            column used to show eight characters of the row's
+                            uuid, which matched nothing on the paperwork, the
+                            invoice or the ledger. */}
                         <td className="py-4 font-mono font-bold text-slate-800 dark:text-slate-200">
                           {s.reference}
                         </td>

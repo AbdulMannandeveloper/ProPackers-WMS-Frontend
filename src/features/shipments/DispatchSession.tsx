@@ -36,11 +36,14 @@ import {
  * three-state machine describing a process that had already happened — the
  * parcel is packed and labelled before anyone opens this screen.
  *
- * So: scan the label, scan the goods, add the tracking number, dispatch.
+ * So: record the tracking ID, scan the goods, dispatch.
  *
- * The label comes first and is mandatory. Everything a shipment is later
- * queried by hangs off it, and letting the goods be picked before there is
- * something to attach them to is how a pile of half-made shipments accumulates.
+ * The first step used to be the shipment label, keyed off the parcel. That made
+ * the bench responsible for an identity the system needs to be unique, and a
+ * mistyped digit or a restarted label roll collided with an older shipment. The
+ * reference is now issued by the server at dispatch — SHP-<year>-<sequence> —
+ * so nothing is typed that could clash, and the step that comes first is the
+ * one thing only the person holding the parcel knows: the courier's number.
  */
 
 type ClientLite = { id: string; companyName: string }
@@ -53,10 +56,6 @@ type Props = {
 }
 
 export function DispatchSession({ clients, onDone, onDispatched }: Props) {
-  const [reference, setReference] = useState<string | null>(null)
-  const [referenceDraft, setReferenceDraft] = useState('')
-  const [checkingReference, setCheckingReference] = useState(false)
-
   const [lines, setLines] = useState<PickLine[]>([])
   const [manual, setManual] = useState('')
   const [looking, setLooking] = useState(false)
@@ -65,15 +64,16 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   const [trackingId, setTrackingId] = useState('')
 
   /**
-   * Which of the last three steps is on screen. (The first, the label, is the
-   * `reference` gate above — nothing here is reachable without it.)
+   * Which of the three steps is on screen.
    *
    * Tracking used to be a field in the footer, beside the Dispatch button. Next
    * to the thing the operator came to press it read as decoration, and it was
    * being skipped: the courier's number is the one part of a shipment a client
-   * later rings about, and it was the easiest part to miss.
+   * later rings about, and it was the easiest part to miss. It is now the step
+   * the screen opens on, in the place the label gate used to hold — passed
+   * through deliberately, whether or not a number is entered.
    */
-  const [stage, setStage] = useState<'picking' | 'tracking' | 'dispatch'>('picking')
+  const [stage, setStage] = useState<'tracking' | 'picking' | 'dispatch'>('tracking')
 
   const [error, setError] = useState('')
   const [muted, setMutedState] = useState(isMuted)
@@ -92,36 +92,6 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
     const next = !muted
     setMuted(next)
     setMutedState(next)
-  }
-
-  /** Step one. Nothing else is reachable until this is settled. */
-  const acceptReference = async (raw: string) => {
-    const value = raw.trim()
-    if (!value || checkingReference) return
-
-    setError('')
-    setCheckingReference(true)
-    try {
-      // Asked now rather than at save: finding out a label was already used
-      // after picking a pallet means picking it back again.
-      const existing = await shipmentsApi.findByReference(value)
-      if (existing) {
-        const when = new Date(existing.createdAt).toLocaleDateString('en-GB')
-        setError(
-          `Label ${value} was already used on ${when} for ${existing.client?.companyName ?? 'another client'}. Scan a different label.`,
-        )
-        signal('refused')
-        return
-      }
-      setReference(value)
-      setReferenceDraft('')
-      signal('accepted')
-    } catch (err) {
-      setError(errorMessage(err, 'Could not check that label.'))
-      signal('refused')
-    } finally {
-      setCheckingReference(false)
-    }
   }
 
   /** Step two. A code becomes a pick, or a refusal. */
@@ -233,11 +203,10 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   // is up so a scan cannot land behind it.
   const routeRef = useRef<(code: string) => void>(() => {})
   routeRef.current = (code: string) => {
-    if (!reference) void acceptReference(code)
     // On the tracking step the gun is pointed at the courier's label, not at a
     // product. Sending it to the product lookup would refuse a code that is
     // exactly what the operator meant to enter.
-    else if (stage === 'tracking') {
+    if (stage === 'tracking') {
       setTrackingId(code.trim())
       signal('accepted')
     } else void handleProductCode(code)
@@ -249,17 +218,19 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
   }, [picking])
 
   const dispatch = async () => {
-    if (lines.length === 0 || !reference || saving) return
+    if (lines.length === 0 || saving) return
 
     setSaving(true)
     setError('')
     try {
-      await shipmentsApi.createShipment({
-        reference,
+      // The reference comes back from the server, which is the first moment it
+      // exists: it is issued from the sequence inside the same transaction that
+      // takes the stock out, so there is nothing to show before this returns.
+      const created = await shipmentsApi.createShipment({
         trackingId: trackingId.trim() || undefined,
         shipmentItems: toShipmentItems(lines),
       })
-      onDispatched({ reference, units })
+      onDispatched({ reference: created.reference, units })
       onDone()
     } catch (err) {
       setError(errorMessage(err, 'Could not dispatch this shipment.'))
@@ -269,126 +240,7 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
     }
   }
 
-  /* ── Step one: the label ─────────────────────────────────────────────── */
-  if (!reference) {
-    return (
-      <div className="flex min-h-screen flex-col">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
-            <h1 className="text-base font-semibold tracking-tight text-slate-900">Outbound</h1>
-            <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-500">
-              Dispatch
-            </span>
-
-            <button
-              type="button"
-              onClick={toggleMute}
-              aria-pressed={muted}
-              className="ml-auto flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
-            >
-              {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-              {muted ? 'Sound off' : 'Sound on'}
-            </button>
-            <button
-              type="button"
-              onClick={onDone}
-              className="flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 [@media(pointer:coarse)]:h-11"
-            >
-              <X size={16} />
-              Finish
-            </button>
-          </div>
-
-          <StepRail
-            current={1}
-            steps={[
-              { label: 'Label', hint: 'The reference on the parcel' },
-              { label: 'Pick items' },
-              { label: 'Tracking' },
-              { label: 'Dispatch' },
-            ]}
-          />
-        </header>
-
-        <div className="flex flex-1 items-start justify-center bg-slate-50 p-6">
-          <div className="w-full max-w-lg border border-slate-200 bg-white p-6">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
-              Step 1 of 3
-            </p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">
-              Shipment label
-            </h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
-              Scan or enter the reference on the parcel. Items cannot be picked until the
-              shipment has one, and each reference can be used only once.
-            </p>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                void acceptReference(referenceDraft)
-              }}
-              className="mt-4 flex gap-2"
-            >
-              <Input
-                value={referenceDraft}
-                onChange={(e) => setReferenceDraft(e.target.value)}
-                placeholder="SHP-000123"
-                aria-label="Shipment label"
-                className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
-                loading={checkingReference}
-                autoFocus
-              />
-              <Button
-                type="submit"
-                className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
-                disabled={!referenceDraft.trim()}
-                loading={checkingReference}
-              >
-                Continue
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 px-3 text-sm [@media(pointer:coarse)]:h-12"
-                onClick={() => setScannerOpen(true)}
-                aria-label="Use the camera"
-              >
-                <Camera size={16} />
-              </Button>
-            </form>
-
-            <p className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
-              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-              Scanner listening
-            </p>
-
-            {error ? (
-              <p
-                className="mt-4 border border-slate-200 border-l-4 border-l-rose-600 bg-white px-4 py-3 text-sm text-rose-700"
-                role="alert"
-              >
-                {error}
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        <BarcodeScanner
-          open={scannerOpen}
-          onClose={() => setScannerOpen(false)}
-          onScan={(value) => {
-            setScannerOpen(false)
-            void acceptReference(value)
-          }}
-          title="Scan the shipment label"
-          description="The label on the parcel becomes this shipment's ID."
-        />
-      </div>
-    )
-  }
-
-  /* ── Steps two and three ─────────────────────────────────────────────── */
+  /* ── All three steps ─────────────────────────────────────────────────── */
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-slate-200 bg-white">
@@ -426,24 +278,28 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         </div>
 
         <StepRail
-          current={stage === 'picking' ? 2 : stage === 'tracking' ? 3 : 4}
+          current={stage === 'tracking' ? 1 : stage === 'picking' ? 2 : 3}
           steps={[
-            { label: 'Label' },
+            { label: 'Tracking ID', hint: 'The courier’s number — optional' },
             { label: 'Pick items', hint: 'The first item sets the client' },
-            { label: 'Tracking', hint: 'The courier’s number — optional' },
             { label: 'Dispatch', hint: 'Nothing moves until confirmed' },
           ]}
         />
 
-        {/* What this shipment is, as facts rather than controls: the reference
-            was scanned and the client is settled by the goods. */}
+        {/* What this shipment is, as facts rather than controls: the tracking
+            ID was entered and the client is settled by the goods. There is no
+            reference here — it is issued when the shipment is written, and a
+            placeholder standing in for it would only invite someone to write it
+            on the parcel before it means anything. */}
         <dl className="flex flex-wrap items-end gap-x-8 gap-y-3 border-t border-slate-200 px-5 py-3">
           <div>
             <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
-              Shipment
+              Tracking ID
             </dt>
             <dd className="font-mono text-sm font-semibold leading-tight text-slate-900">
-              {reference}
+              {trackingId.trim() || (
+                <span className="font-sans font-normal text-slate-400">not recorded</span>
+              )}
             </dd>
           </div>
           <div>
@@ -473,30 +329,31 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         </dl>
       </header>
 
-      {/* ── Step three: the courier's number ──────────────────────────────
-          Its own screen, because as a field in the footer it sat beside the
-          Dispatch button and was read as decoration. Skipping is still one
-          press — the point is that it is now a press, not an omission. */}
+      {/* ── Step one: the courier's number ────────────────────────────────
+          Its own screen, in the place the label gate used to hold. As a field
+          in the footer it sat beside the Dispatch button and was read as
+          decoration; here it is the first thing asked, while the parcel and its
+          courier docket are still in hand. Skipping is still one press — the
+          point is that it is now a press, not an omission. */}
       {stage === 'tracking' ? (
         <div className="flex flex-1 items-start justify-center bg-slate-50 p-6">
           <div className="w-full max-w-lg border border-slate-200 bg-white p-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
-              Step 3 of 4
+              Step 1 of 3
             </p>
             <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">
-              Tracking number
+              Tracking ID
             </h2>
             <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
-              The consignment number the courier gave you for{' '}
-              <span className="font-mono font-semibold text-slate-900">{reference}</span>. It
-              is what {clientName ?? 'the client'} will quote when they ask where the order
-              is. Add it now if you have it.
+              Scan or enter the consignment number the courier gave you for this parcel. It
+              is what the client will quote when they ask where the order is. The shipment
+              reference is issued automatically when you dispatch — nothing to key in.
             </p>
 
             <form
               onSubmit={(e) => {
                 e.preventDefault()
-                setStage('dispatch')
+                setStage('picking')
               }}
               className="mt-4 flex gap-2"
             >
@@ -505,7 +362,7 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
                 value={trackingId}
                 onChange={(e) => setTrackingId(e.target.value)}
                 placeholder="Courier reference"
-                aria-label="Tracking number"
+                aria-label="Tracking ID"
                 className="h-10 font-mono text-sm [@media(pointer:coarse)]:h-12"
                 autoFocus
               />
@@ -516,6 +373,15 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
               >
                 Save and continue
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 px-3 text-sm [@media(pointer:coarse)]:h-12"
+                onClick={() => setScannerOpen(true)}
+                aria-label="Use the camera"
+              >
+                <Camera size={16} />
+              </Button>
             </form>
 
             <p className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
@@ -523,20 +389,22 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
               Scanner listening
             </p>
 
-            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
-              <Button
-                variant="outline"
-                className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
-                onClick={() => setStage('picking')}
+            {error ? (
+              <p
+                className="mt-4 border border-slate-200 border-l-4 border-l-rose-600 bg-white px-4 py-3 text-sm text-rose-700"
+                role="alert"
               >
-                Back to the goods
-              </Button>
+                {error}
+              </p>
+            ) : null}
+
+            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
               <Button
                 variant="ghost"
                 className="ml-auto h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
                 onClick={() => {
                   setTrackingId('')
-                  setStage('dispatch')
+                  setStage('picking')
                 }}
               >
                 Skip — no number yet
@@ -687,10 +555,23 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
             <Button
               variant="outline"
               className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
-              onClick={() => setStage('tracking')}
+              onClick={() => setStage('picking')}
               disabled={saving}
             >
               Back
+            </Button>
+          ) : null}
+
+          {/* The way back to step one. The courier's number often turns up a
+              minute after the parcel is packed, and skipping it must not be a
+              one-way door now that it is asked for before the goods. */}
+          {stage === 'picking' ? (
+            <Button
+              variant="outline"
+              className="h-10 px-4 text-sm [@media(pointer:coarse)]:h-12"
+              onClick={() => setStage('tracking')}
+            >
+              {trackingId.trim() ? 'Edit tracking ID' : 'Add tracking ID'}
             </Button>
           ) : null}
 
@@ -699,8 +580,8 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
             {units === 1 ? 'unit' : 'units'} on{' '}
             <span className="font-semibold tabular-nums text-slate-900">{lines.length}</span>{' '}
             {lines.length === 1 ? 'line' : 'lines'}
-            {/* Shown here from step four on, so a skipped number is visible
-                without opening the confirmation. */}
+            {/* Shown here from the last step on, so a skipped number is
+                visible without opening the confirmation. */}
             {stage === 'dispatch' ? (
               <>
                 {' · '}
@@ -716,7 +597,7 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
           {stage === 'picking' ? (
             <Button
               className="h-10 px-5 text-sm [@media(pointer:coarse)]:h-12"
-              onClick={() => setStage('tracking')}
+              onClick={() => setStage('dispatch')}
               disabled={lines.length === 0}
             >
               Continue
@@ -765,27 +646,43 @@ export function DispatchSession({ clients, onDone, onDispatched }: Props) {
         onCancel={() => setConfirming(false)}
         onConfirm={() => void dispatch()}
         facts={[
-          { label: 'Shipment', value: reference },
           { label: 'Client', value: clientName ?? 'unknown' },
           {
             label: 'Goods',
             value: `${units} ${units === 1 ? 'unit' : 'units'} on ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`,
           },
           {
-            label: 'Tracking',
+            label: 'Tracking ID',
             value: trackingId.trim() || 'not recorded',
             emphasis: !trackingId.trim(),
           },
+          // Named rather than shown: the number does not exist until this is
+          // confirmed, and saying so is what stops someone waiting for one.
+          { label: 'Reference', value: 'Issued on dispatch' },
         ]}
       />
 
+      {/* The camera feeds whichever step is open, for the same reason the gun
+          does: on the tracking step it is pointed at the courier's docket, not
+          at a product, and a code sent to the product lookup would be refused
+          for being exactly what the operator meant to enter. */}
       <BarcodeScanner
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
-        onScan={(value) => void handleProductCode(value)}
-        title="Scan the goods"
-        description="Everything on this shipment must belong to one client."
-        continuous
+        onScan={(value) => {
+          if (stage === 'tracking') {
+            setScannerOpen(false)
+            setTrackingId(value.trim())
+            signal('accepted')
+          } else void handleProductCode(value)
+        }}
+        title={stage === 'tracking' ? 'Scan the courier label' : 'Scan the goods'}
+        description={
+          stage === 'tracking'
+            ? 'The consignment number the courier issued for this parcel.'
+            : 'Everything on this shipment must belong to one client.'
+        }
+        continuous={stage !== 'tracking'}
       />
 
       {looking ? (

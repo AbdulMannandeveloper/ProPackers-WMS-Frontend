@@ -71,12 +71,19 @@ const typeInto = (label: string | RegExp, value: string) => {
 beforeEach(() => {
   vi.clearAllMocks()
   findByReference.mockResolvedValue(null)
+  // The reference is the server's to issue, so the only place it exists is in
+  // what comes back from this call.
+  createShipment.mockResolvedValue({ id: 'sh1', reference: 'SHP-2026-000007' })
 })
 
-/** Gets past the label step, which gates everything else. */
-const startSession = async () => {
+/** Gets past the tracking step, which is now what gates the goods. */
+const startSession = async (trackingId?: string) => {
   renderSession()
-  typeInto('Shipment label', 'SHP-0001')
+  if (trackingId) {
+    typeInto('Tracking ID', trackingId)
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: /Skip/ }))
+  }
   await waitFor(() => expect(screen.getByLabelText('Barcode or SKU')).toBeTruthy())
 }
 
@@ -154,39 +161,77 @@ describe('a product with nothing on the shelf', () => {
   })
 })
 
-describe('the label gates the goods', () => {
-  it('offers no product input until a label is scanned', () => {
+describe('the tracking step gates the goods', () => {
+  it('is what the screen opens on — no product input until it is passed', () => {
     renderSession()
 
-    expect(screen.getByLabelText('Shipment label')).toBeTruthy()
+    expect(screen.getByLabelText('Tracking ID')).toBeTruthy()
+    expect(screen.getByText(/Step 1 of 3/)).toBeTruthy()
     expect(screen.queryByLabelText('Barcode or SKU')).toBeNull()
   })
 
-  it('refuses a label already used, naming the earlier shipment', async () => {
-    findByReference.mockResolvedValue({
-      createdAt: '2026-09-04T10:00:00.000Z',
-      client: { companyName: 'Nestle' },
-    })
-
+  it('never asks for a shipment label — the server issues the reference', () => {
+    // The whole point of the replacement: nothing on this screen invites a
+    // number to be keyed in that could collide with an existing shipment.
     renderSession()
-    typeInto('Shipment label', 'SHP-USED')
 
-    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
-    expect(screen.getByRole('alert').textContent).toMatch(/already used/i)
-    expect(screen.getByRole('alert').textContent).toMatch(/Nestle/)
-    expect(screen.queryByLabelText('Barcode or SKU')).toBeNull()
+    expect(screen.queryByLabelText('Shipment label')).toBeNull()
+    expect(findByReference).not.toHaveBeenCalled()
+  })
+
+  it('can be skipped, and the goods are still reachable', async () => {
+    // The courier's number often turns up after the parcel is packed. Skipping
+    // is a press, not an omission.
+    await startSession()
+
+    expect(screen.getByLabelText('Barcode or SKU')).toBeTruthy()
+  })
+
+  it('carries the number into the header once it is entered', async () => {
+    await startSession('H01AA9988776655')
+
+    expect(screen.getByText('H01AA9988776655')).toBeTruthy()
+  })
+
+  it('can be gone back to from the goods, keeping what was typed', async () => {
+    // Skipping must not be a one-way door: the courier's number often turns up
+    // a minute after the parcel is packed.
+    await startSession('H01AA9988776655')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tracking ID' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Tracking ID')).toBeTruthy())
+    expect((screen.getByLabelText('Tracking ID') as HTMLInputElement).value).toBe(
+      'H01AA9988776655',
+    )
+  })
+
+  it('offers to add one from the goods when it was skipped', async () => {
+    await startSession()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add tracking ID' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Tracking ID')).toBeTruthy())
   })
 })
 
-describe('the tracking step', () => {
-  /** Label, one product, then out of picking. */
-  const reachTracking = async () => {
+describe('what is sent on dispatch', () => {
+  /** Tracking, one product, then out of picking. */
+  const reachDispatch = async (trackingId?: string) => {
     lookupByCode.mockResolvedValue({ matches: [match(1)] })
-    await startSession()
+    await startSession(trackingId)
     typeInto('Barcode or SKU', 'SKU-100')
     await waitFor(() => expect(screen.getByLabelText(/Quantity of Blue Tape/)).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await waitFor(() => expect(screen.getByLabelText('Tracking number')).toBeTruthy())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Dispatch shipment' })).toBeTruthy(),
+    )
+  }
+
+  const confirm = async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Dispatch shipment' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Dispatch' }))
+    await waitFor(() => expect(createShipment).toHaveBeenCalled())
   }
 
   it('cannot be reached with nothing picked', async () => {
@@ -198,77 +243,57 @@ describe('the tracking step', () => {
     )
   })
 
-  it('takes the screen once the goods are picked', async () => {
-    // The point of the change: it is a step, not a field beside the button that
-    // sends the shipment.
-    await reachTracking()
+  it('sends no reference — the server issues it', async () => {
+    await reachDispatch('H01AA9988776655')
 
-    expect(screen.getByText(/Step 3 of 4/)).toBeTruthy()
-    expect(screen.queryByLabelText('Barcode or SKU')).toBeNull()
+    await confirm()
+
+    expect(createShipment.mock.calls[0][0]).not.toHaveProperty('reference')
   })
 
-  it('can be skipped, and dispatch is still reachable', async () => {
-    await reachTracking()
-
+  it('reports the reference that came back, not one it made up', async () => {
+    const onDispatched = vi.fn()
+    lookupByCode.mockResolvedValue({ matches: [match(1)] })
+    render(
+      <StrictMode>
+        <DispatchSession
+          clients={[{ id: 'c1', companyName: 'Acme Ltd' }]}
+          onDone={vi.fn()}
+          onDispatched={onDispatched}
+        />
+      </StrictMode>,
+    )
     fireEvent.click(screen.getByRole('button', { name: /Skip/ }))
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Dispatch shipment' })).toBeTruthy(),
-    )
-    expect(screen.getByText(/no tracking number/)).toBeTruthy()
-  })
-
-  it('keeps what was typed when you go back to it', async () => {
-    // Skipping must not be a one-way door: the courier's number often turns up
-    // a minute later.
-    await reachTracking()
-
-    fireEvent.change(screen.getByLabelText('Tracking number'), {
-      target: { value: 'H01AA9988776655' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
+    await waitFor(() => expect(screen.getByLabelText('Barcode or SKU')).toBeTruthy())
+    typeInto('Barcode or SKU', 'SKU-100')
+    await waitFor(() => expect(screen.getByLabelText(/Quantity of Blue Tape/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Dispatch shipment' })).toBeTruthy(),
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await confirm()
 
-    await waitFor(() => expect(screen.getByLabelText('Tracking number')).toBeTruthy())
-    expect((screen.getByLabelText('Tracking number') as HTMLInputElement).value).toBe(
-      'H01AA9988776655',
+    await waitFor(() =>
+      expect(onDispatched).toHaveBeenCalledWith({ reference: 'SHP-2026-000007', units: 1 }),
     )
   })
 
-  it('sends the number it was given', async () => {
-    await reachTracking()
+  it('sends the tracking number it was given', async () => {
+    await reachDispatch('H01AA9988776655')
 
-    fireEvent.change(screen.getByLabelText('Tracking number'), {
-      target: { value: 'H01AA9988776655' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Dispatch shipment' })).toBeTruthy(),
-    )
+    await confirm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dispatch shipment' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Dispatch' }))
-
-    await waitFor(() => expect(createShipment).toHaveBeenCalled())
     expect(createShipment.mock.calls[0][0].trackingId).toBe('H01AA9988776655')
   })
 
-  it('sends none when it was skipped', async () => {
-    await reachTracking()
+  it('sends none when tracking was skipped', async () => {
+    await reachDispatch()
 
-    fireEvent.click(screen.getByRole('button', { name: /Skip/ }))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Dispatch shipment' })).toBeTruthy(),
-    )
+    expect(screen.getByText(/no tracking number/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dispatch shipment' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Dispatch' }))
+    await confirm()
 
-    await waitFor(() => expect(createShipment).toHaveBeenCalled())
     expect(createShipment.mock.calls[0][0].trackingId).toBeUndefined()
   })
 })
